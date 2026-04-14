@@ -1,57 +1,72 @@
-<?php include('partials/menu.php'); ?>
+<?php include('partials/menu.php'); 
 
-<div class="main" style="padding: 20px; background-color: #f8f9fa;">
-    <div class="wrapper" style="max-width: 1200px; margin: 0 auto;">
-        <h1 style="font-size: 2.5em; color: #343a40; text-align: center; margin-bottom: 30px;">Update Order</h1>
-        <br><br>
-
-        <?php
-        // Check whether id is set or not
-        if (isset($_GET['id'])) {
-            // Get order details
-            $id = $_GET['id'];
-            // Get all order details based on id
-            $sql = "SELECT * FROM tbl_order WHERE id=$id";
-            $res = mysqli_query($conn, $sql);
-            $count = mysqli_num_rows($res);
-            if ($count == 1) {
-                $row = mysqli_fetch_assoc($res);
-                $item = $row['item'];
-                $price = $row['price'];
-                $qty = $row['qty'];
-                $status = $row['status'];
-                $customer_name = $row['customer_name'];
-                $customer_contact = $row['customer_contact'];
-                $customer_email = $row['customer_email'];
-                $customer_address = $row['customer_address'];
-            } else {
-                header('location:' . SITEURL . 'admin/order.php');
-            }
-        } else {
-            header('location:' . SITEURL . 'admin/order.php');
+class OrderManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function getOrderById($id) {
+        $sql = "SELECT * FROM tbl_order WHERE id=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $id);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($this->db->numRows($res) == 1) {
+            return $this->db->fetchAssoc($res);
         }
+        return null;
+    }
+    
+    public function updateOrderStatus($id, $status) {
+        $sql = "UPDATE tbl_order SET status=? WHERE id=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "si", $status, $id);
+        return $this->db->execute($stmt);
+    }
+}
 
-        // Handle form submission
-        $err = [];
-        if (isset($_POST['submit'])) {
-            $id = $_POST['id'];
-            $status = $_POST['status'];
+$orderManager = new OrderManager();
 
-            $sql2 = "UPDATE tbl_order SET
-                status = '$status'
-                WHERE id=$id";
+// Check whether id is set or not
+if (isset($_GET['id'])) {
+    $id = $_GET['id'];
+    $order = $orderManager->getOrderById($id);
+    
+    if (!$order) {
+        header('location:' . SITEURL . 'admin/order.php');
+        exit;
+    }
+    
+    $item = $order['item'];
+    $price = $order['price'];
+    $qty = $order['qty'];
+    $status = $order['status'];
+    $customer_name = $order['customer_name'];
+    $customer_contact = $order['customer_contact'];
+    $customer_email = $order['customer_email'];
+    $customer_address = $order['customer_address'];
+} else {
+    header('location:' . SITEURL . 'admin/order.php');
+    exit;
+}
 
-            $res2 = mysqli_query($conn, $sql2);
+// Handle form submission
+$err = [];
+if (isset($_POST['submit'])) {
+    $id = $_POST['id'];
+    $status = $_POST['status'];
 
-            if ($res2 == true) {
-                $_SESSION['update'] = "<div class='success' style='color: #28a745;'>Order Updated Successfully</div>";
-                header('location:' . SITEURL . 'admin/order.php');
-            } else {
-                $_SESSION['update'] = "<div class='error' style='color: #dc3545;'>Failed to Update Order</div>";
-                header('location:' . SITEURL . 'admin/order.php');
-            }
-        }
-        ?>
+    if ($orderManager->updateOrderStatus($id, $status)) {
+        $_SESSION['update'] = "<div class='success' style='color: #28a745;'>Order Updated Successfully</div>";
+        header('location:' . SITEURL . 'admin/order.php');
+        exit;
+    } else {
+        $_SESSION['update'] = "<div class='error' style='color: #dc3545;'>Failed to Update Order</div>";
+        header('location:' . SITEURL . 'admin/order.php');
+        exit;
+    }
+}
 
         <form action="" method="POST" style="max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);">
             <?php if (!empty($err)): ?>

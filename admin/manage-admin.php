@@ -1,4 +1,20 @@
-<?php include('partials/menu.php'); ?>
+<?php include('partials/menu.php'); 
+
+class AdminListManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function getAllAdmins() {
+        $sql = "SELECT * FROM tbl_admin";
+        $res = $this->db->query($sql);
+        return $res ? $this->db->fetchAll($res) : [];
+    }
+}
+
+$adminListManager = new AdminListManager();
+$admins = $adminListManager->getAllAdmins();
+?>
 <!--main content section starts here-->
 <div class="main">
     <div class="wrapper">
@@ -52,29 +68,23 @@
             </tr>
 
             <?php
-                $sql = "SELECT * FROM tbl_admin";
-                $res = mysqli_query($conn, $sql);
-                if($res == TRUE) {
-                    $count = mysqli_num_rows($res);
-                    $sn = 1;
-                    if($count > 0) {
-                        while($rows = mysqli_fetch_assoc($res)) {
-                            $id = $rows['id'];
-                            $full_name = $rows['full_name'];
-                            $username = $rows['username'];
+                $sn = 1;
+                if (count($admins) > 0) {
+                    foreach ($admins as $admin) {
+                        $id = $admin['id'];
+                        $full_name = $admin['full_name'];
+                        $username = $admin['username'];
             ?>
             <tr>
                 <td><?php echo $sn++; ?></td>
-                <td><?php echo $full_name; ?></td>
-                <td><?php echo $username; ?></td>
+                <td><?php echo htmlspecialchars($full_name); ?></td>
+                <td><?php echo htmlspecialchars($username); ?></td>
                 <td>
                     <a href="<?php echo SITEURL; ?>admin/update-password.php?id=<?php echo $id;?>" class="btn-primary">Change Password</a>
                     <a href="<?php echo SITEURL; ?>admin/update-admin.php?id=<?php echo $id;?>" class="btn-secondary">Update Admin</a>
-                    <!-- <a href="<?php echo SITEURL; ?>admin/delete-admin.php?id=<?php echo $id;?>" class="btn-secondary1">Delete Admin</a> -->
                 </td>
             </tr>
             <?php
-                        }
                     }
                 }
             ?>

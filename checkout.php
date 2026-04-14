@@ -6,6 +6,44 @@ if (session_status() === PHP_SESSION_NONE) {
 
 include 'config/constants.php'; // Include the database connection
 
+interface CheckoutServiceInterface {
+    public function getOrderById($orderId);
+}
+
+class CheckoutManager extends BaseManager implements CheckoutServiceInterface {
+    private $orderId;
+
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+
+    public function setOrderId($orderId) {
+        $this->orderId = (int)$orderId;
+        return $this;
+    }
+
+    public function getOrderId() {
+        return $this->orderId;
+    }
+
+    public function sanitize($value) {
+        return parent::sanitize($value);
+    }
+    
+    public function getOrderById($orderId) {
+        $sql = "SELECT * FROM tbl_order WHERE id = ?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $orderId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($res && $this->db->numRows($res) > 0) {
+            return $this->db->fetchAssoc($res);
+        }
+        return null;
+    }
+}
+
 // Check if the order ID is passed via GET or session
 $order_id = $_GET['order_id'] ?? $_SESSION['order_id'] ?? null;
 
@@ -13,23 +51,18 @@ if (!$order_id) {
     die("Order ID is missing. Please ensure the order ID is passed correctly.");
 }
 
-// Fetch the order details from the database using the correct column 'id'
-$query = "SELECT * FROM tbl_order WHERE id = ?";
-$stmt = mysqli_prepare($conn, $query);
-mysqli_stmt_bind_param($stmt, "i", $order_id);
-mysqli_stmt_execute($stmt);
-
-$result = mysqli_stmt_get_result($stmt);
-$order = mysqli_fetch_assoc($result);
+// Fetch the order details from the database
+$checkoutManager = (new CheckoutManager())->setOrderId($order_id);
+$order = $checkoutManager->getOrderById($checkoutManager->getOrderId());
 
 if ($order) {
     // Order details
-    $item = $order['item'];
-    $amount = $order['total']; // Assuming 'total' field in your order table represents the total amount
-    $customer_name = $order['customer_name'];
-    $customer_email = $order['customer_email'];
-    $customer_phone = $order['customer_contact'];
-    $customer_address = $order['customer_address'];
+    $item = htmlspecialchars($order['item']);
+    $amount = htmlspecialchars($order['total']);
+    $customer_name = htmlspecialchars($order['customer_name']);
+    $customer_email = htmlspecialchars($order['customer_email']);
+    $customer_phone = htmlspecialchars($order['customer_contact']);
+    $customer_address = htmlspecialchars($order['customer_address']);
 } else {
     die("Order not found.");
 }

@@ -1,3 +1,7 @@
+<?php
+class InvalidTokenPageRenderer {
+    public function render() {
+        ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,3 +25,10 @@
     </div>
 </body>
 </html>
+<?php
+    }
+}
+
+$invalidTokenPageRenderer = new InvalidTokenPageRenderer();
+$invalidTokenPageRenderer->render();
+?>

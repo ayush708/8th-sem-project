@@ -1,11 +1,10 @@
-<?php 
-    include('../config/constants.php'); 
-    include('login-check.php'); 
+<?php
+include('../config/constants.php');
+include('login-check.php');
 
-?>
-
-
-
+class AdminMenuRenderer {
+    public function render() {
+        ?>
 <html>
     <head>
         <title>Online Pet Shop Admin</title>
@@ -26,10 +25,15 @@
                 <li><a href="logout.php">Log Out</a></li>
             </ul>
             </div>
-            
         </div>
 
-
-         <!--menu section ends here-->
-</body>
+        <!--menu section ends here-->
+    </body>
 </html>
+<?php
+    }
+}
+
+$adminMenuRenderer = new AdminMenuRenderer();
+$adminMenuRenderer->render();
+?>

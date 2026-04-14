@@ -1,99 +1,117 @@
-<?php include('partials/menu.php'); ?>
+<?php 
+include('partials/menu.php');
 
-<?php
-    // Initialize error array
-    $errors = [];
-
-    // Check if form is submitted
-    if(isset($_POST['submit'])) {
-        // Retrieve form data and validate
-        $title = isset($_POST['title']) ? $_POST['title'] : '';
-        $description = isset($_POST['description']) ? $_POST['description'] : '';
-        $price = isset($_POST['price']) ? $_POST['price'] : '';
-        $quantity = isset($_POST['quantity']) ? $_POST['quantity'] : '';
-
-        // Validate title
-        if(empty($title)) {
+class ProductManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function validateInput($data) {
+        $errors = [];
+        
+        if (empty($data['title'])) {
             $errors['title'] = 'Title is required';
         }
-
-        // Validate description
-        if(empty($description)) {
+        
+        if (empty($data['description'])) {
             $errors['description'] = 'Description is required';
         }
-
-        // Validate price
-        if(empty($price)) {
+        
+        if (empty($data['price'])) {
             $errors['price'] = 'Price is required';
-        } elseif(!preg_match('/^\d+(\.\d{1,2})?$/', $price)) {
+        } elseif (!preg_match('/^\d+(\.\d{1,2})?$/', $data['price'])) {
             $errors['price'] = 'Invalid price format';
         }
-
-        // Validate quantity
-        if(empty($quantity) || !is_numeric($quantity) || $quantity <= 0) {
+        
+        if (empty($data['quantity']) || !is_numeric($data['quantity']) || $data['quantity'] <= 0) {
             $errors['quantity'] = 'Please enter a valid quantity';
         }
-
-        // Validate image upload if provided
-        if(isset($_FILES['image']['name'])) {
-            $image_name = $_FILES['image']['name'];
-            if(empty($image_name)) {
-                $errors['image'] = 'Please choose an image';
-            }
-        } else {
-            $errors['image'] = 'Image upload error';
+        
+        return $errors;
+    }
+    
+    public function validateImage($imageFile) {
+        if (!isset($imageFile['name']) || empty($imageFile['name'])) {
+            return 'Please choose an image';
         }
-
-        // Proceed if no errors
-        if(empty($errors)) {
-            // Sanitize and handle image upload
-            $image_name = '';
-            if(isset($_FILES['image']['name'])) {
-                $image_name = $_FILES['image']['name'];
-                $image_tmp = $_FILES['image']['tmp_name'];
-                $ext = pathinfo($image_name, PATHINFO_EXTENSION);
-                $image_name = 'item-name-' . rand(0000, 9999) . '.' . $ext;
-                $upload_dir = "../images/item/";
-                $upload_path = $upload_dir . $image_name;
-
-                // Upload image
-                if(move_uploaded_file($image_tmp, $upload_path)) {
-                    // Image uploaded successfully
-                } else {
-                    // Failed to upload image
-                    $_SESSION['upload'] = '<div class="error">Failed to upload image</div>';
-                    header('location:'.SITEURL.'admin/add-item.php');
-                    exit;
-                }
+        return null;
+    }
+    
+    public function uploadImage($imageFile) {
+        if (isset($imageFile['name']) && !empty($imageFile['name'])) {
+            $imageName = $imageFile['name'];
+            $imageTmp = $imageFile['tmp_name'];
+            $ext = pathinfo($imageName, PATHINFO_EXTENSION);
+            $imageName = 'item-name-' . rand(0000, 9999) . '.' . $ext;
+            $uploadDir = "../images/item/";
+            $uploadPath = $uploadDir . $imageName;
+            
+            if (move_uploaded_file($imageTmp, $uploadPath)) {
+                return $imageName;
             }
+        }
+        return null;
+    }
+    
+    public function addProduct($title, $description, $price, $imageName, $categoryId, $featured, $active, $quantity) {
+        $sql = "INSERT INTO tbl_items (title, description, price, image_name, category_id, featured, active, quantity) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "ssssissi", $title, $description, $price, $imageName, $categoryId, $featured, $active, $quantity);
+        return $this->db->execute($stmt);
+    }
+    
+    public function getAllCategories() {
+        $sql = "SELECT id, title FROM tbl_category WHERE active='Yes'";
+        $res = $this->db->query($sql);
+        return $res ? $this->db->fetchAll($res) : [];
+    }
+}
 
-            // Retrieve other form data
+$productManager = new ProductManager();
+$errors = [];
+
+// Check if form is submitted
+if (isset($_POST['submit'])) {
+    $formData = [
+        'title' => isset($_POST['title']) ? $_POST['title'] : '',
+        'description' => isset($_POST['description']) ? $_POST['description'] : '',
+        'price' => isset($_POST['price']) ? $_POST['price'] : '',
+        'quantity' => isset($_POST['quantity']) ? $_POST['quantity'] : '',
+    ];
+    
+    $errors = $productManager->validateInput($formData);
+    $imageError = $productManager->validateImage($_FILES['image']);
+    
+    if ($imageError) {
+        $errors['image'] = $imageError;
+    }
+    
+    if (empty($errors)) {
+        $imageName = $productManager->uploadImage($_FILES['image']);
+        
+        if ($imageName) {
             $category = isset($_POST['category']) ? $_POST['category'] : '';
             $featured = isset($_POST['featured']) ? $_POST['featured'] : 'No';
             $active = isset($_POST['active']) ? $_POST['active'] : 'No';
-
-            // Insert into database
-            $sql = "INSERT INTO tbl_items (title, description, price, image_name, category_id, featured, active, quantity) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            $stmt = mysqli_prepare($conn, $sql);
-
-            // Bind parameters
-            mysqli_stmt_bind_param($stmt, "ssssissi", $title, $description, $price, $image_name, $category, $featured, $active, $quantity);
-
-            // Execute query
-            if(mysqli_stmt_execute($stmt)) {
-                // Data inserted successfully
+            
+            if ($productManager->addProduct($formData['title'], $formData['description'], $formData['price'], $imageName, $category, $featured, $active, $formData['quantity'])) {
                 $_SESSION['add'] = '<div class="success">Item Added Successfully</div>';
                 header('location:'.SITEURL.'admin/item.php');
                 exit;
             } else {
-                // Failed to insert data
                 $_SESSION['add'] = '<div class="error">Failed to add Item</div>';
                 header('location:'.SITEURL.'admin/item.php');
                 exit;
             }
+        } else {
+            $_SESSION['upload'] = '<div class="error">Failed to upload image</div>';
+            header('location:'.SITEURL.'admin/add-item.php');
+            exit;
         }
     }
+}
+
 ?>
 
 <div class="main-content">

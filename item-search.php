@@ -1,10 +1,74 @@
 <?php
-// Include the menu and footer
 include('partials-front/menu.php');
+include('config/constants.php');
 
-// Get the search keyword
-$search = isset($_POST['search']) ? $_POST['search'] : '';
-?>
+class ItemSearchManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function searchItems($keyword) {
+        $keyword = '%' . $keyword . '%';
+        $sql = "SELECT * FROM tbl_items WHERE (title LIKE ? OR description LIKE ?) AND active='Yes'";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "ss", $keyword, $keyword);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        return $res ? $this->db->fetchAll($res) : [];
+    }
+    
+    public function renderProductBox($product) {
+        $id = $product['id'];
+        $title = $product['title'];
+        $price = $product['price'];
+        $description = $product['description'];
+        $imageName = $product['image_name'];
+        $quantity = $product['quantity'];
+        
+        $imageHtml = "";
+        if ($imageName == "") {
+            $imageHtml = "<div class='error'>Image not available</div>";
+        } else {
+            $imageHtml = "<img src='" . SITEURL . "images/item/{$imageName}' alt='{$title}' class='img-responsive' style='width: 100%; height: auto; max-height: 300px; object-fit: contain;'>";
+        }
+        
+        return "
+            <div class='item-menu-box'>
+                <div class='item-menu-img'>
+                    {$imageHtml}
+                </div>
+                <div class='item-menu-desc'>
+                    <h4>{$title}</h4>
+                    <p class='item-price'>Rs.{$price}</p>
+                    <p class='item-description'>{$description}</p>
+                    <p class='quantity'>Available: {$quantity}</p>
+                    <a href='" . SITEURL . "order.php?item_id={$id}' class='btn btn-primary'>Order Now</a>
+                    <a href='" . SITEURL . "add-to-cart.php?item_id={$id}' class='btn btn-primary' style='margin-left: 5px;'>Add to Cart</a>
+                </div>
+            </div>
+        ";
+    }
+    
+    public function renderAllSearchResults($items) {
+        if (empty($items)) {
+            return "<h2 class='text-center'>No items found for this search.</h2>";
+        }
+        
+        $html = '';
+        foreach ($items as $item) {
+            $html .= $this->renderProductBox($item);
+        }
+        return $html;
+    }
+}
+
+$search = isset($_POST['search']) ? htmlspecialchars($_POST['search']) : '';
+$searchEngine = new ItemSearchManager();
+$searchResults = [];
+
+if (!empty($search)) {
+    $searchResults = $searchEngine->searchItems($search);
+}
 
 <!-- Inline CSS for responsiveness and styling -->
 <style>

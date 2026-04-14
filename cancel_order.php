@@ -1,32 +1,62 @@
 <?php
-// Connect to the database
-$conn = mysqli_connect("localhost", "root", "", "petshop");
+include('config/constants.php');
 
-// Check connection
-if (!$conn) {
-    die("Connection failed: " . mysqli_connect_error());
+interface CancellableOrderInterface {
+    public function checkOrderExists($orderId);
+    public function cancelOrder($orderId);
+}
+
+class OrderCanceller extends BaseManager implements CancellableOrderInterface {
+    private $orderId;
+
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+
+    public function setOrderId($orderId) {
+        $this->orderId = (int)$orderId;
+        return $this;
+    }
+
+    public function getOrderId() {
+        return $this->orderId;
+    }
+    
+    public function checkOrderExists($orderId) {
+        $sql = "SELECT * FROM tbl_order WHERE id = ? AND status NOT IN ('Delivered', 'On Delivery')";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $orderId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        return $this->db->numRows($res) > 0;
+    }
+    
+    public function cancelOrder($orderId) {
+        $sql = "DELETE FROM tbl_order WHERE id = ?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $orderId);
+        return $this->db->execute($stmt);
+    }
 }
 
 // Get the order ID from the POST request
-$order_id = $_POST['order_id'];
+$orderId = isset($_POST['order_id']) ? $_POST['order_id'] : null;
 
-// Check if the order exists and is not delivered
-$sql = "SELECT * FROM tbl_order WHERE id = $order_id AND status NOT IN ('Delivered', 'On Delivery')";
-$result = mysqli_query($conn, $sql);
-
-if (mysqli_num_rows($result) > 0) {
-    // Delete the order
-    $sql = "DELETE FROM tbl_order WHERE id = $order_id";
-    $result = mysqli_query($conn, $sql);
-    if ($result) {
-        echo "Order cancelled successfully.";
+if ($orderId) {
+    $canceller = (new OrderCanceller())->setOrderId($orderId);
+    $orderId = $canceller->getOrderId();
+    
+    if ($canceller->checkOrderExists($orderId)) {
+        if ($canceller->cancelOrder($orderId)) {
+            echo "Order cancelled successfully.";
+        } else {
+            echo "Failed to cancel order.";
+        }
     } else {
-        echo "Failed to cancel order: " . mysqli_error($conn);
+        echo "Order not found or already delivered.";
     }
 } else {
-    echo "Order not found or already delivered.";
+    echo "Order ID is missing.";
 }
-
-// Close the database connection
-mysqli_close($conn);
 ?>

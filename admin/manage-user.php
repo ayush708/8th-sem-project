@@ -1,4 +1,20 @@
-<?php include('partials/menu.php'); ?>
+<?php include('partials/menu.php'); 
+
+class UserListManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function getAllUsers() {
+        $sql = "SELECT * FROM tbl_users";
+        $res = $this->db->query($sql);
+        return $res ? $this->db->fetchAll($res) : [];
+    }
+}
+
+$userListManager = new UserListManager();
+$users = $userListManager->getAllUsers();
+?>
 
 <div class="main">
     <div class="wrapper">
@@ -13,10 +29,6 @@
 
         <br><br>
 
-        <!-- Button to add admin -->
-        <!-- <a href="add-user.php" class="btn-primary">Add User</a> -->
-        <!-- <br><br><br> -->
-
         <table class="tbl-full">
             <tr>
                 <th>S.N.</th>
@@ -26,40 +38,26 @@
             </tr>
 
             <?php
-                // Query to get all users
-                $sql = "SELECT * FROM tbl_users";
-                $res = mysqli_query($conn, $sql);
-
-                if($res == TRUE) {
-                    $count = mysqli_num_rows($res);
-                    $sn = 1;
-
-                    if($count > 0) {
-                        while($row = mysqli_fetch_assoc($res)) {
-                            $username = $row['username'];
-                            $phone = $row['phone']; // Retrieve phone number from the database
-                            ?>
+                $sn = 1;
+                if (count($users) > 0) {
+                    foreach ($users as $user) {
+                        $username = $user['username'];
+                        $phone = $user['phone'];
+            ?>
 
                             <tr>
                                 <td><?php echo $sn++; ?></td>
-                                <td><?php echo $username; ?></td>
-                                <td><?php echo $phone; ?></td>
+                                <td><?php echo htmlspecialchars($username); ?></td>
+                                <td><?php echo htmlspecialchars($phone); ?></td>
                                 <td>
-                                    <a href="<?php echo SITEURL; ?>admin/delete-user.php?username=<?php echo $username; ?>" class="btn-secondary1">Delete</a>
+                                    <a href="<?php echo SITEURL; ?>admin/delete-user.php?username=<?php echo urlencode($username); ?>" class="btn-secondary1">Delete</a>
                                 </td>
                             </tr>
 
-                            <?php
-                        }
-                    } else {
-                        ?>
-
-                        <tr>
-                            <td colspan="4">No Users Added Yet</td>
-                        </tr>
-
-                        <?php
+            <?php
                     }
+                } else {
+                    echo "<tr><td colspan='4'>No Users Added Yet</td></tr>";
                 }
             ?>
 

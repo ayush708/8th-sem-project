@@ -1,127 +1,158 @@
-<?php include('partials/menu.php'); ?>
+<?php 
+include('partials/menu.php');
 
-<?php
-    // Check if ID is set
-    if(isset($_GET['id'])) {
-        $id = $_GET['id'];
-
-        // SQL query to fetch item details
+class ItemManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function getItemById($id) {
         $sql = "SELECT * FROM tbl_items WHERE id=?";
-        $stmt = mysqli_prepare($conn, $sql);
-        mysqli_stmt_bind_param($stmt, "i", $id);
-        mysqli_stmt_execute($stmt);
-        $res = mysqli_stmt_get_result($stmt);
-
-        // Fetch item details
-        if(mysqli_num_rows($res) == 1) {
-            $row = mysqli_fetch_assoc($res);
-            $title = $row['title'];
-            $description = $row['description'];
-            $price = $row['price'];
-            $current_image = $row['image_name'];
-            $current_category = $row['category_id'];
-            $featured = $row['featured'];
-            $active = $row['active'];
-            $quantity = $row['quantity'];
-        } else {
-            $_SESSION['update'] = "<div class='error'>Item not found.</div>";
-            header('location:'.SITEURL.'admin/item.php');
-            exit;
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $id);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($this->db->numRows($res) == 1) {
+            return $this->db->fetchAssoc($res);
         }
-    } else {
+        return null;
+    }
+    
+    public function validateItemInput($data) {
+        $errors = [];
+        
+        if (empty($data['title'])) {
+            $errors[] = "Title is required.";
+        }
+        
+        if (empty($data['description'])) {
+            $errors[] = "Description is required.";
+        }
+        
+        if (empty($data['price']) || !is_numeric($data['price']) || $data['price'] <= 0) {
+            $errors[] = "Price must be a valid number greater than zero.";
+        }
+        
+        if (empty($data['quantity']) || !is_numeric($data['quantity']) || $data['quantity'] < 0) {
+            $errors[] = "Quantity must be a valid number greater than or equal to zero.";
+        }
+        
+        if ($data['category'] == '0') {
+            $errors[] = "Please select a category.";
+        }
+        
+        return $errors;
+    }
+    
+    public function updateItemImage($newImageName, $currentImage) {
+        $allowedExtensions = array('jpg', 'jpeg', 'png', 'gif');
+        $fileExtension = strtolower(pathinfo($newImageName, PATHINFO_EXTENSION));
+        
+        if (!in_array($fileExtension, $allowedExtensions)) {
+            return ['error' => "Invalid file type. Allowed types: jpg, jpeg, png, gif."];
+        }
+        
+        $newImageName = 'item-name-' . rand(0000, 9999) . '.' . $fileExtension;
+        $uploadPath = "../images/item/" . $newImageName;
+        
+        // Delete current image if it exists and is different
+        if ($currentImage != "" && file_exists("../images/item/" . $currentImage)) {
+            unlink("../images/item/" . $currentImage);
+        }
+        
+        return ['success' => $newImageName];
+    }
+    
+    public function updateItem($id, $title, $description, $price, $imageName, $category, $featured, $active, $quantity) {
+        $sql = "UPDATE tbl_items SET title=?, description=?, price=?, image_name=?, category_id=?, featured=?, active=?, quantity=? WHERE id=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "ssssissii", $title, $description, $price, $imageName, $category, $featured, $active, $quantity, $id);
+        return $this->db->execute($stmt);
+    }
+    
+    public function getAllCategories() {
+        $sql = "SELECT id, title FROM tbl_category";
+        $res = $this->db->query($sql);
+        return $res ? $this->db->fetchAll($res) : [];
+    }
+}
+
+// Check if ID is set
+if (isset($_GET['id'])) {
+    $id = $_GET['id'];
+    $itemManager = new ItemManager();
+    $item = $itemManager->getItemById($id);
+    
+    if (!$item) {
+        $_SESSION['update'] = "<div class='error'>Item not found.</div>";
         header('location:'.SITEURL.'admin/item.php');
         exit;
     }
+    
+    $title = $item['title'];
+    $description = $item['description'];
+    $price = $item['price'];
+    $currentImage = $item['image_name'];
+    $currentCategory = $item['category_id'];
+    $featured = $item['featured'];
+    $active = $item['active'];
+    $quantity = $item['quantity'];
+} else {
+    header('location:'.SITEURL.'admin/item.php');
+    exit;
+}
 
-    // Process form submission
-    if(isset($_POST['submit'])) {
-        $id = $_POST['id'];
-        $title = $_POST['title'];
-        $description = $_POST['description'];
-        $price = $_POST['price'];
-        $quantity = $_POST['quantity'];
-        $current_image = $_POST['current_image'];
-        $category = $_POST['category'];
-        $featured = isset($_POST['featured']) ? $_POST['featured'] : 'No';
-        $active = isset($_POST['active']) ? $_POST['active'] : 'No';
-
-        // Validate inputs
-        $errors = array();
-
-        if(empty($title)) {
-            $errors[] = "Title is required.";
-        }
-
-        if(empty($description)) {
-            $errors[] = "Description is required.";
-        }
-
-        if(empty($price) || !is_numeric($price) || $price <= 0) {
-            $errors[] = "Price must be a valid number greater than zero.";
-        }
-
-        if(empty($quantity) || !is_numeric($quantity) || $quantity < 0) {
-            $errors[] = "Quantity must be a valid number greater than or equal to zero.";
-        }
-
-        if($category == '0') {
-            $errors[] = "Please select a category.";
-        }
-
-        if(isset($_FILES['image']['name']) && !empty($_FILES['image']['name'])) {
-            $new_image_name = $_FILES['image']['name'];
-            $tmp_name = $_FILES['image']['tmp_name'];
-
-            $allowed_extensions = array('jpg', 'jpeg', 'png', 'gif');
-            $file_extension = strtolower(pathinfo($new_image_name, PATHINFO_EXTENSION));
-
-            if(!in_array($file_extension, $allowed_extensions)) {
-                $errors[] = "Invalid file type. Allowed types: jpg, jpeg, png, gif.";
-            } else {
-                $new_image_name = "item_".time().'.'.$file_extension;
-                $destination_path = "../images/item/".$new_image_name;
-                $upload = move_uploaded_file($tmp_name, $destination_path);
-
-                if($upload == false) {
-                    $errors[] = "Failed to upload the new image.";
-                }
-
-                if(!empty($current_image)) {
-                    $remove_path = "../images/item/".$current_image;
-                    $remove = unlink($remove_path);
-
-                    if($remove == false) {
-                        $errors[] = "Failed to remove the current image.";
-                    }
-                }
-            }
+// Process form submission
+if (isset($_POST['submit'])) {
+    $id = $_POST['id'];
+    $title = htmlspecialchars($_POST['title']);
+    $description = htmlspecialchars($_POST['description']);
+    $price = $_POST['price'];
+    $quantity = $_POST['quantity'];
+    $currentImage = $_POST['current_image'];
+    $category = $_POST['category'];
+    $featured = isset($_POST['featured']) ? $_POST['featured'] : 'No';
+    $active = isset($_POST['active']) ? $_POST['active'] : 'No';
+    
+    $itemManager = new ItemManager();
+    $errors = $itemManager->validateItemInput([
+        'title' => $title,
+        'description' => $description,
+        'price' => $price,
+        'quantity' => $quantity,
+        'category' => $category
+    ]);
+    
+    $newImageName = $currentImage;
+    
+    if (isset($_FILES['image']['name']) && !empty($_FILES['image']['name'])) {
+        $tmpName = $_FILES['image']['tmp_name'];
+        $imageResult = $itemManager->updateItemImage($_FILES['image']['name'], $currentImage);
+        
+        if (isset($imageResult['error'])) {
+            $errors[] = $imageResult['error'];
         } else {
-            $new_image_name = $current_image;
-        }
-
-        if(empty($errors)) {
-            $sql_update = "UPDATE tbl_items SET 
-                title=?, 
-                description=?, 
-                price=?, 
-                quantity=?, 
-                image_name=?, 
-                category_id=?, 
-                featured=?, 
-                active=? 
-                WHERE id=?";
-            $stmt2 = mysqli_prepare($conn, $sql_update);
-            mysqli_stmt_bind_param($stmt2, "ssdissssi", $title, $description, $price, $quantity, $new_image_name, $category, $featured, $active, $id);
-            $res2 = mysqli_stmt_execute($stmt2);
-
-            if($res2) {
-                $_SESSION['update'] = '<div class="success">Item updated successfully.</div>';
-            } else {
-                $_SESSION['update'] = '<div class="error">Failed to update item.</div>';
+            $newImageName = $imageResult['success'];
+            if (!move_uploaded_file($tmpName, "../images/item/" . $newImageName)) {
+                $errors[] = "Failed to upload image.";
             }
-
+        }
+    }
+    
+    if (empty($errors)) {
+        if ($itemManager->updateItem($id, $title, $description, $price, $newImageName, $category, $featured, $active, $quantity)) {
+            $_SESSION['update'] = "<div class='success'>Item Updated Successfully.</div>";
             header('location:'.SITEURL.'admin/item.php');
             exit;
+        } else {
+            $_SESSION['update'] = "<div class='error'>Failed to Update Item</div>";
+            header('location:'.SITEURL.'admin/item.php');
+            exit;
+        }
+    }
+}
+
         }
     }
 ?>

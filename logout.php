@@ -1,7 +1,11 @@
 <?php
-    include('config/constants.php');
-    //destroy session 
-    session_destroy(); //unset $_SESSION['user']
-    //redirect to index page
-    header('location:'.SITEURL.'index.php');
-?>
+include('config/constants.php');
+
+class SessionManager {
+    public static function logout() {
+        session_destroy();
+    }
+}
+
+SessionManager::logout();
+header('location:'.SITEURL.'index.php');

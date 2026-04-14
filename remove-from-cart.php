@@ -2,19 +2,29 @@
 session_start();
 include('config/constants.php');
 
+class CartOperations {
+    public function removeItem($itemId) {
+        if (isset($_SESSION['cart'])) {
+            foreach ($_SESSION['cart'] as $key => $item) {
+                if ($item['id'] == $itemId) {
+                    unset($_SESSION['cart'][$key]);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+
 // Check if item_id is set
 if (isset($_GET['item_id'])) {
-    $item_id = $_GET['item_id'];
-
-    // Loop through cart to remove the item
-    foreach ($_SESSION['cart'] as $key => $item) {
-        if ($item['id'] == $item_id) {
-            unset($_SESSION['cart'][$key]);
-            $_SESSION['order'] = "Item removed from cart successfully.";
-            break;
-        }
+    $itemId = $_GET['item_id'];
+    $cartOps = new CartOperations();
+    
+    if ($cartOps->removeItem($itemId)) {
+        $_SESSION['order'] = "Item removed from cart successfully.";
     }
-
+    
     // Redirect to cart page
     header('Location: cart.php');
     exit();

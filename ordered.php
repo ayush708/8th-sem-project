@@ -1,7 +1,68 @@
 <?php
 session_start();
 include('config/constants.php'); 
-include('partials-front/menu.php'); 
+include('partials-front/menu.php');
+
+class OrderPlacementManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function createOrder($itemTitle, $price, $quantity, $total, $fullName, $phone, $email, $address, $userId, $paymentOption) {
+        $sql = "INSERT INTO tbl_order (item, price, qty, total, order_date, status, customer_name, customer_contact, customer_email, customer_address, uid, payment_option)
+                VALUES (?, ?, ?, ?, NOW(), 'Ordered', ?, ?, ?, ?, ?, ?)";
+        
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, 'sdidsissis', 
+            $itemTitle, 
+            $price, 
+            $quantity, 
+            $total, 
+            $fullName, 
+            $phone, 
+            $email, 
+            $address, 
+            $userId, 
+            $paymentOption
+        );
+        
+        return $this->db->execute($stmt);
+    }
+    
+    public function processCartOrder($cartItems, $fullName, $phone, $email, $address, $paymentMethod) {
+        $totalPrice = 0;
+        
+        foreach ($cartItems as $item) {
+            if (is_array($item) && isset($item['title'], $item['price'], $item['quantity'])) {
+                $itemTotal = $item['price'] * $item['quantity'];
+                $totalPrice += $itemTotal;
+                
+                if (isset($_SESSION['user_id'])) {
+                    $result = $this->createOrder(
+                        $item['title'],
+                        $item['price'],
+                        $item['quantity'],
+                        $itemTotal,
+                        $fullName,
+                        $phone,
+                        $email,
+                        $address,
+                        $_SESSION['user_id'],
+                        $paymentMethod
+                    );
+                    
+                    if (!$result) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
+        }
+        
+        return true;
+    }
+}
 
 // Check if user is logged in
 if (!isset($_SESSION["user_logged_in"]) || $_SESSION["user_logged_in"] !== true) {
@@ -10,76 +71,38 @@ if (!isset($_SESSION["user_logged_in"]) || $_SESSION["user_logged_in"] !== true)
 }
 
 // Fetch cart details from session
-$cart_items = isset($_SESSION['cart']) ? $_SESSION['cart'] : array();
-$total_price = 0;
+$cartItems = isset($_SESSION['cart']) ? $_SESSION['cart'] : array();
+$totalPrice = 0;
 
 // Check if the form was submitted
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Process the order
-    if (count($cart_items) > 0) {
+    if (count($cartItems) > 0) {
         // Get delivery details from the form
-        $full_name = mysqli_real_escape_string($conn, $_POST['full_name']);
-        $phone = mysqli_real_escape_string($conn, $_POST['phone']);
-        $email = mysqli_real_escape_string($conn, $_POST['email']);
-        $address = mysqli_real_escape_string($conn, $_POST['address']);
-        $payment_method = mysqli_real_escape_string($conn, $_POST['payment_method']);
-
-        // Store order in the database
-        foreach ($cart_items as $item) {
-            // Check if $item is an array and contains the expected keys
-            if (is_array($item) && isset($item['title'], $item['price'], $item['quantity'])) {
-                $item_total = $item['price'] * $item['quantity'];
-                $total_price += $item_total;
-
-                // Validate user session
-                if (isset($_SESSION['user']) && is_array($_SESSION['user']) && isset($_SESSION['user']['user_id'])) {
-                    // Insert order into tbl_order
-                    $sql = "INSERT INTO tbl_order (item, price, qty, total, order_date, status, customer_name, customer_contact, customer_email, customer_address, uid, payment_option)
-                            VALUES (?, ?, ?, ?, NOW(), 'Ordered', ?, ?, ?, ?, ?, ?)";
-                    $stmt = mysqli_prepare($conn, $sql);
-                    mysqli_stmt_bind_param($stmt, 'sdiissss', 
-                        $item['title'], 
-                        $item['price'], 
-                        $item['quantity'], 
-                        $item_total, 
-                        $full_name, 
-                        $phone, 
-                        $email, 
-                        $address, 
-                        $_SESSION['user']['user_id'], // Ensure this is set correctly
-                        $payment_method
-                    );
-                    mysqli_stmt_execute($stmt);
-                    mysqli_stmt_close($stmt);
-                } else {
-                    // Handle the error: user is not logged in or user_id is missing
-                    echo "<div class='error text-red-600'>User session not found. Please log in again.</div>";
-                    exit();
-                }
-            } else {
-                // Handle the error: item is not in expected format
-                echo "<div class='error text-red-600'>Invalid item format in cart.</div>";
-                exit();
-            }
-        }
-
-        // Clear the cart
-        unset($_SESSION['cart']);
-
-        // Redirect based on payment option
-        if ($payment_method === 'Online Payment') {
-            // For online payments, redirect to the payment request page
-            header('location: payment-request.php'); 
-        } else {
-            // Set success message in session for Cash on Delivery
-            $_SESSION['order'] = "<div class='success text-center'>Order Placed Successfully</div>";
+        $fullName = htmlspecialchars($_POST['full_name']);
+        $phone = htmlspecialchars($_POST['phone']);
+        $email = htmlspecialchars($_POST['email']);
+        $address = htmlspecialchars($_POST['address']);
+        $paymentMethod = htmlspecialchars($_POST['payment_method']);
+        
+        $order = new OrderPlacementManager();
+        
+        if ($order->processCartOrder($cartItems, $fullName, $phone, $email, $address, $paymentMethod)) {
+            // Clear the cart
+            unset($_SESSION['cart']);
             
-            // Redirect to index.php
-            header('location: index.php'); 
+            // Redirect based on payment option
+            if ($paymentMethod === 'Online Payment') {
+                header('location: payment-request.php'); 
+            } else {
+                $_SESSION['order'] = "<div class='success text-center'>Order Placed Successfully</div>";
+                header('location: index.php'); 
+            }
+            exit();
+        } else {
+            echo "<div class='error text-red-600'>Failed to place order. Please try again.</div>";
         }
-        exit();
     } else {
-        // Handle case where no valid items are in the cart
         header('location: index.php');
         exit();
     }

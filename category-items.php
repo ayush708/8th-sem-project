@@ -1,31 +1,103 @@
-<?php include('partials-front/menu.php');?>
+<?php 
+include('partials-front/menu.php');
+include('config/constants.php');
 
-<?php
+class CategoryItemsManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function getCategoryTitle($categoryId) {
+        $sql = "SELECT title FROM tbl_category WHERE id=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $categoryId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($res && $this->db->numRows($res) > 0) {
+            $row = $this->db->fetchAssoc($res);
+            return $row['title'];
+        }
+        return null;
+    }
+    
+    public function getItemsByCategory($categoryId) {
+        $sql = "SELECT * FROM tbl_items WHERE category_id=? AND active='Yes'";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $categoryId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        return $res ? $this->db->fetchAll($res) : [];
+    }
+    
+    public function renderProductBox($product) {
+        $id = $product['id'];
+        $title = $product['title'];
+        $price = $product['price'];
+        $description = $product['description'];
+        $imageName = $product['image_name'];
+        $quantity = $product['quantity'];
+        
+        $imageHtml = "";
+        if ($imageName == "") {
+            $imageHtml = "<div class='error'>Image not available</div>";
+        } else {
+            $imageHtml = "<img src='" . SITEURL . "images/item/{$imageName}' alt='{$title}' class='img-responsive'>";
+        }
+        
+        return "
+            <div class='explore-box'>
+                <div class='explore-menu-img'>
+                    {$imageHtml}
+                </div>
+                <div class='explore-menu-desc'>
+                    <h4>{$title}</h4>
+                    <p class='item-price'>Rs. {$price}</p>
+                    <p class='item-detail'>{$description}</p>
+                    <p class='quantity'>Items Left: {$quantity}</p>
+                    <br>
+                    <a href='" . SITEURL . "order.php?item_id={$id}' class='btn btn-primary'>Order Now</a>
+                    <a href='" . SITEURL . "add-to-cart.php?item_id={$id}' class='btn btn-secondary'>Add to Cart</a>
+                </div>
+            </div>
+        ";
+    }
+    
+    public function renderAllItems($items) {
+        if (empty($items)) {
+            return "<div class='error'>Item not available</div>";
+        }
+        
+        $html = '';
+        foreach ($items as $item) {
+            $html .= $this->renderProductBox($item);
+        }
+        return $html;
+    }
+}
+
 // Check whether id is passed or not
 if (isset($_GET['category_id'])) {
-    // Category id is set and get the id
-    $category_id = $_GET['category_id'];
-    // Get category title based on category id
-    $sql = "SELECT title FROM tbl_category WHERE id=$category_id";
-
-    // Execute
-    $res = mysqli_query($conn, $sql);
-
-    // Get value from db
-    $row = mysqli_fetch_assoc($res);
-    // Get the title
-    $category_title = $row['title'];
+    $categoryId = $_GET['category_id'];
+    $categoryItems = new CategoryItemsManager();
+    
+    $categoryTitle = $categoryItems->getCategoryTitle($categoryId);
+    
+    if (!$categoryTitle) {
+        header('location:' . SITEURL);
+        exit();
+    }
+    
+    $items = $categoryItems->getItemsByCategory($categoryId);
 } else {
-    // Category not passed
-    // Redirect
     header('location:' . SITEURL);
+    exit();
 }
-?>
 
 <!-- Item Search Section Starts Here -->
 <section class="search text-center">
     <div class="container">
-        <h2>Items in <a href="#" class="text-white">"<?php echo $category_title ?>"</a></h2>
+        <h2>Items in <a href="#" class="text-white">"<?php echo $categoryTitle ?>"</a></h2>
     </div>
 </section>
 <!-- Item Search Section Ends Here -->
@@ -37,60 +109,7 @@ if (isset($_GET['category_id'])) {
 
         <div class="explore-grid">
         <?php
-            // Create SQL query to get items based on selected category
-            $sql2 = "SELECT * FROM tbl_items WHERE category_id=$category_id";
-
-            // Execute
-            $res2 = mysqli_query($conn, $sql2);
-
-            // Count rows
-            $count2 = mysqli_num_rows($res2);
-
-            // Check whether item is available or not
-            if ($count2 > 0) {
-                // Item available
-                while ($row2 = mysqli_fetch_assoc($res2)) {
-                    $id = $row2['id'];
-                    $title = $row2['title'];
-                    $price = $row2['price'];
-                    $description = $row2['description'];
-                    $image_name = $row2['image_name'];
-                    $quantity = $row2['quantity']; // Fetch quantity
-
-                    ?>
-
-                    <div class="explore-box">
-                        <div class="explore-menu-img">
-                            <?php
-                            if ($image_name == "") {
-                                // Image not available
-                                echo "<div class='error'>Image not available</div>";
-                            } else {
-                                // Image available
-                                ?>
-                                <img src="<?php echo SITEURL; ?>images/item/<?php echo $image_name; ?>" alt="<?php echo $title; ?>" class="img-responsive">
-                                <?php
-                            }
-                            ?>
-                        </div>
-
-                        <div class="explore-menu-desc">
-                            <h4><?php echo $title; ?></h4>
-                            <p class="item-price">Rs. <?php echo $price; ?></p>
-                            <p class="item-detail"><?php echo $description; ?></p>
-                            <p class="quantity">Items Left: <?php echo $quantity; ?></p> <!-- Display quantity here -->
-                            <br>
-                            <a href="<?php echo SITEURL; ?>order.php?item_id=<?php echo $id; ?>" class="btn btn-primary">Order Now</a>
-                            <a href="<?php echo SITEURL; ?>add_to_cart.php?item_id=<?php echo $id; ?>" class="btn btn-secondary">Add to Cart</a>
-                        </div>
-                    </div>
-
-                    <?php
-                }
-            } else {
-                // Item not available
-                echo "<div class='error'>Item not available</div>";
-            }
+            echo $categoryItems->renderAllItems($items);
         ?>
         </div>
 

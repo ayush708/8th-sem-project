@@ -1,5 +1,17 @@
-<?php include('config/constants.php');?>
+<?php include('config/constants.php');
 
+class FrontMenuRenderer {
+    private function isUserLoggedIn() {
+        return isset($_SESSION['user_logged_in']) && $_SESSION['user_logged_in'] === true;
+    }
+
+    private function getCartCount() {
+        return (isset($_SESSION['cart']) && count($_SESSION['cart']) > 0) ? count($_SESSION['cart']) : 0;
+    }
+
+    public function render() {
+        $cartCount = $this->getCartCount();
+        ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -62,7 +74,7 @@
                         <a href="<?php echo SITEURL; ?>">Home</a>
                     </li>
                     <!-- Show menu based on login status -->
-                    <?php if (isset($_SESSION["user_logged_in"]) && $_SESSION["user_logged_in"] === true) : ?>
+                    <?php if ($this->isUserLoggedIn()) : ?>
                         <li>
                             <a href="<?php echo SITEURL; ?>categories.php">Categories</a>
                         </li>
@@ -89,15 +101,7 @@
             <!-- Basket/Cart icon on top-right -->
             <div class="cart-icon-container">
                 <a href="<?php echo SITEURL; ?>cart.php" class="cart-icon">
-                    <?php
-                        // Display the number of items in the cart if the session exists
-                        if(isset($_SESSION['cart']) && count($_SESSION['cart']) > 0) {
-                            $cart_count = count($_SESSION['cart']);
-                            echo "<span class='cart-count'>$cart_count</span>";
-                        } else {
-                            echo "<span class='cart-count'>0</span>";
-                        }
-                    ?>
+                    <?php echo "<span class='cart-count'>{$cartCount}</span>"; ?>
                 </a>
             </div>
             <!-- Basket/Cart icon end -->
@@ -108,3 +112,10 @@
     <!-- Navbar section end -->
 </body>
 </html>
+<?php
+    }
+}
+
+$frontMenuRenderer = new FrontMenuRenderer();
+$frontMenuRenderer->render();
+?>

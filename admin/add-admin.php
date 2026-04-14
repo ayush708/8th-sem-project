@@ -1,66 +1,74 @@
-<?php include('partials/menu.php'); ?>
+<?php include('partials/menu.php'); 
 
-<?php 
+class AdminManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function validateFullName($full_name) {
+        if (empty($full_name)) {
+            return "Enter Full Name";
+        } elseif (!preg_match("/^[A-Za-z\s]+$/", $full_name)) {
+            return "Full Name must only contain letters and spaces";
+        }
+        return null;
+    }
+    
+    public function validateUsername($username) {
+        if (empty($username)) {
+            return "Enter Username";
+        } elseif (!preg_match("/^[a-zA-Z0-9]{4,29}$/", $username)) {
+            return "Username must be alphanumeric and between 4 to 29 characters";
+        }
+        return null;
+    }
+    
+    public function validatePassword($password) {
+        if (empty($password)) {
+            return "Enter Password";
+        }
+        return null;
+    }
+    
+    public function addAdmin($full_name, $username, $password) {
+        $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+        $sql = "INSERT INTO tbl_admin (full_name, username, password) VALUES (?, ?, ?)";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "sss", $full_name, $username, $hashedPassword);
+        return $this->db->execute($stmt);
+    }
+}
 
 // Initialize error array
 $err = [];
+$adminManager = new AdminManager();
 
 // Check if form is submitted
 if(isset($_POST['submit'])) {
     // Validate and sanitize inputs
     $full_name = isset($_POST['full_name']) ? trim($_POST['full_name']) : '';
     $username = isset($_POST['username']) ? trim($_POST['username']) : '';
+    $password = isset($_POST['password']) ? $_POST['password'] : '';
 
-    // Validation for full name
-    if(empty($full_name)) {
-        $err['full_name'] = "Enter Full Name";
-    } elseif(!preg_match("/^[A-Za-z\s]+$/", $full_name)) {
-        $err['full_name'] = "Full Name must only contain letters and spaces";
+    // Validate inputs
+    if ($nameError = $adminManager->validateFullName($full_name)) {
+        $err['full_name'] = $nameError;
     }
-
-    // Validation for username
-    if(empty($username)) {
-        $err['username'] = "Enter Username";
-    } elseif(!preg_match("/^[a-zA-Z0-9]{4,29}$/", $username)) {
-        $err['username'] = "Username must be alphanumeric and between 4 to 29 characters";
+    if ($usernameError = $adminManager->validateUsername($username)) {
+        $err['username'] = $usernameError;
     }
-
-    if(empty($_POST['password'])) {
-        $err['password'] = "Enter Password";
+    if ($passwordError = $adminManager->validatePassword($password)) {
+        $err['password'] = $passwordError;
     }
 
     // Check if there are no errors
     if(empty($err)) {
-        // Password encryption using password_hash()
-        $password = isset($_POST['password']) ? password_hash($_POST['password'], PASSWORD_DEFAULT) : '';
-
-        // Prepare SQL statement with placeholders
-        $sql = "INSERT INTO tbl_admin (full_name, username, password) VALUES (?, ?, ?)";
-
-        // Prepare statement
-        $stmt = mysqli_prepare($conn, $sql);
-
-        if ($stmt) {
-            // Bind parameters and execute
-            mysqli_stmt_bind_param($stmt, "sss", $full_name, $username, $password);
-
-            // Execute statement
-            if(mysqli_stmt_execute($stmt)) {
-                // Set success message in session
-                $_SESSION['add'] = "Admin Added Successfully";
-                // Redirect to manage-admin page
-                header("location:".SITEURL.'admin/manage-admin.php');
-                exit;
-            } else {
-                // Set error message in session
-                $_SESSION['add'] = "Failed to add Admin";
-                // Redirect back to add-admin page
-                header("location:".SITEURL.'admin/add-admin.php');
-                exit;
-            }
+        if ($adminManager->addAdmin($full_name, $username, $password)) {
+            $_SESSION['add'] = "Admin Added Successfully";
+            header("location:".SITEURL.'admin/manage-admin.php');
+            exit;
         } else {
-            // SQL statement preparation failed
-            $_SESSION['add'] = "Database error: Unable to prepare statement.";
+            $_SESSION['add'] = "Failed to add Admin";
             header("location:".SITEURL.'admin/add-admin.php');
             exit;
         }

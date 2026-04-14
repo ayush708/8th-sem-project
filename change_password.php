@@ -1,65 +1,90 @@
 <?php
-// Include the constants file where the database connection is defined
 include('config/constants.php');
 
-// Check if a session is already started
+class PasswordManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function getUserPassword($userId) {
+        $sql = "SELECT password FROM tbl_users WHERE user_id = ?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $userId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($res && $this->db->numRows($res) > 0) {
+            $user = $this->db->fetchAssoc($res);
+            return $user['password'];
+        }
+        return null;
+    }
+    
+    public function validatePasswordInput($currentPassword, $newPassword, $confirmPassword, $hashedPassword) {
+        $errors = [];
+        
+        if (empty($currentPassword) || empty($newPassword) || empty($confirmPassword)) {
+            $errors[] = 'All fields are required.';
+        }
+        
+        if ($newPassword !== $confirmPassword) {
+            $errors[] = 'New password and confirm password do not match.';
+        }
+        
+        if (strlen($newPassword) < 8) {
+            $errors[] = 'New password must be at least 8 characters long.';
+        }
+        
+        if (!password_verify($currentPassword, $hashedPassword)) {
+            $errors[] = 'Current password is incorrect.';
+        }
+        
+        return $errors;
+    }
+    
+    public function updatePassword($userId, $newPassword) {
+        $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+        $sql = "UPDATE tbl_users SET password = ? WHERE user_id = ?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "si", $hashedPassword, $userId);
+        return $this->db->execute($stmt);
+    }
+}
+
+// Check if session is started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Initialize variables
 $errors = array();
 $successMessage = '';
+$passwordManager = new PasswordManager();
 
 // Handle form submission
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $currentPassword = $_POST['current_password'];
     $newPassword = $_POST['new_password'];
     $confirmPassword = $_POST['confirm_password'];
-
-    // Validate input
-    if (empty($currentPassword) || empty($newPassword) || empty($confirmPassword)) {
-        $errors[] = 'All fields are required.';
-    }
-
-    if ($newPassword !== $confirmPassword) {
-        $errors[] = 'New password and confirm password do not match.';
-    }
-
-    if (strlen($newPassword) < 8) {
-        $errors[] = 'New password must be at least 8 characters long.';
-    }
-
-    // Check if the current password is correct
-    if (empty($errors)) {
-        $user_id = $_SESSION['user_id'];
-        $query = "SELECT password FROM tbl_users WHERE user_id = $user_id";
-        $result = mysqli_query($conn, $query);
-        $user = mysqli_fetch_assoc($result);
-
-        if (password_verify($currentPassword, $user['password'])) {
-            // Update the password
-            $newPasswordHashed = password_hash($newPassword, PASSWORD_DEFAULT);
-            $query = "UPDATE tbl_users SET password = '$newPasswordHashed' WHERE user_id = $user_id";
-            $result = mysqli_query($conn, $query);
-
-            if ($result) {
-                // Store success message in session and log out user
+    
+    $userId = $_SESSION['user_id'];
+    $hashedPassword = $passwordManager->getUserPassword($userId);
+    
+    if ($hashedPassword) {
+        $errors = $passwordManager->validatePasswordInput($currentPassword, $newPassword, $confirmPassword, $hashedPassword);
+        
+        if (empty($errors)) {
+            if ($passwordManager->updatePassword($userId, $newPassword)) {
                 $_SESSION['password_change_success'] = 'Password updated successfully. Please log in again.';
-                
-                // Clear the session data
                 session_unset();
                 session_destroy();
-
-                // Redirect to login page
                 header('Location: login.php');
                 exit();
             } else {
                 $errors[] = 'Failed to update the password.';
             }
-        } else {
-            $errors[] = 'Current password is incorrect.';
         }
+    } else {
+        $errors[] = 'User not found.';
     }
 }
 ?>

@@ -1,96 +1,90 @@
-<?php include('partials/menu.php'); ?>
+<?php 
+include('partials/menu.php');
 
-<?php
-    // Check if form is submitted
-    if(isset($_POST['submit'])) {
-        // Initialize error variables
-        $err_title = '';
-        $err = 0;
-
-        // Validate and sanitize inputs
-        if(isset($_POST['title']) && !empty(trim($_POST['title']))) {
-            $title = trim($_POST['title']);
-            
-            // Check if the title is unique
-            $sql_check = "SELECT * FROM tbl_category WHERE title = ?";
-            $stmt_check = mysqli_prepare($conn, $sql_check);
-            mysqli_stmt_bind_param($stmt_check, "s", $title);
-            mysqli_stmt_execute($stmt_check);
-            $res_check = mysqli_stmt_get_result($stmt_check);
-            if(mysqli_num_rows($res_check) > 0) {
-                $err_title = 'Category title already exists';
-                $err++;
-            }
-        } else {
-            $err_title = 'Enter title';
-            $err++;
+class CategoryManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function validateTitle($title) {
+        if (empty(trim($title))) {
+            return "Enter title";
         }
-
-        // Handle radio inputs (featured and active)
-        $featured = isset($_POST['featured']) ? $_POST['featured'] : "No";
-        $active = isset($_POST['active']) ? $_POST['active'] : "No";
-
-        // Check if an image is uploaded
-        if(isset($_FILES['image']['name'])) {
-            $image_name = $_FILES['image']['name'];
-            $image_tmp = $_FILES['image']['tmp_name'];
-
-            // Check if image is selected and process upload
-            if(!empty($image_name)) {
-                // Get file extension
-                $img_ext = strtolower(pathinfo($image_name, PATHINFO_EXTENSION));
-
-                // Generate unique name for the image
-                $image_name = "Category_" . rand(1000, 9999) . '.' . $img_ext;
-
-                // Upload file
-                $upload_dir = "../images/category/";
-                $upload_path = $upload_dir . $image_name;
-
-                if(move_uploaded_file($image_tmp, $upload_path)) {
-                    // Image uploaded successfully
-                } else {
-                    // Failed to upload image
-                    $_SESSION['upload'] = "Failed to Upload Image";
-                    header('location:'.SITEURL.'admin/add-category.php');
-                    exit;
-                }
-            } else {
-                // No image selected
-                $image_name = "";
-                $err++;
-            }
-        } else {
-            // No image selected
-            $image_name = "";
-            $err++;
+        
+        $sql = "SELECT * FROM tbl_category WHERE title = ?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "s", $title);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($this->db->numRows($res) > 0) {
+            return "Category title already exists";
         }
-
-        // If no errors, proceed to insert into database
-        if($err == 0) {
-            // Prepare SQL statement
-            $sql = "INSERT INTO tbl_category (title, image_name, featured, active) VALUES (?, ?, ?, ?)";
+        
+        return null;
+    }
+    
+    public function uploadImage($imageFile) {
+        if (isset($imageFile['name']) && !empty($imageFile['name'])) {
+            $imageName = $imageFile['name'];
+            $imageTmp = $imageFile['tmp_name'];
+            $imgExt = strtolower(pathinfo($imageName, PATHINFO_EXTENSION));
+            $imageName = "Category_" . rand(1000, 9999) . '.' . $imgExt;
             
-            // Prepare statement
-            $stmt = mysqli_prepare($conn, $sql);
+            $uploadDir = "../images/category/";
+            $uploadPath = $uploadDir . $imageName;
             
-            // Bind parameters
-            mysqli_stmt_bind_param($stmt, "ssss", $title, $image_name, $featured, $active);
-            
-            // Execute statement
-            if(mysqli_stmt_execute($stmt)) {
-                // Query executed successfully
-                $_SESSION['add'] = "Category Added Successfully";
-                header('location:'.SITEURL.'admin/category.php');
-                exit;
-            } else {
-                // Failed to execute query
-                $_SESSION['add'] = "Failed to Add Category";
-                header('location:'.SITEURL.'admin/add-category.php');
-                exit;
+            if (move_uploaded_file($imageTmp, $uploadPath)) {
+                return $imageName;
             }
+        }
+        return null;
+    }
+    
+    public function addCategory($title, $imageName, $featured, $active) {
+        $sql = "INSERT INTO tbl_category (title, image_name, featured, active) VALUES (?, ?, ?, ?)";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "ssss", $title, $imageName, $featured, $active);
+        return $this->db->execute($stmt);
+    }
+}
+
+// Check if form is submitted
+if (isset($_POST['submit'])) {
+    $categoryManager = new CategoryManager();
+    $errors = [];
+    
+    $title = isset($_POST['title']) ? trim($_POST['title']) : '';
+    $featured = isset($_POST['featured']) ? $_POST['featured'] : "No";
+    $active = isset($_POST['active']) ? $_POST['active'] : "No";
+    
+    // Validate title
+    if ($error = $categoryManager->validateTitle($title)) {
+        $errors[] = $error;
+    }
+    
+    // Upload image
+    $imageName = $categoryManager->uploadImage($_FILES['image']);
+    if (!$imageName) {
+        $_SESSION['upload'] = "Failed to Upload Image";
+        header('location:'.SITEURL.'admin/add-category.php');
+        exit;
+    }
+    
+    // If no errors, add category
+    if (empty($errors)) {
+        if ($categoryManager->addCategory($title, $imageName, $featured, $active)) {
+            $_SESSION['add'] = "Category Added Successfully";
+            header('location:'.SITEURL.'admin/category.php');
+            exit;
+        } else {
+            $_SESSION['add'] = "Failed to Add Category";
+            header('location:'.SITEURL.'admin/add-category.php');
+            exit;
         }
     }
+}
+
 ?>
 
 <div class="main">

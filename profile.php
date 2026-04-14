@@ -1,82 +1,114 @@
 <?php 
-// Include the configuration file
 include('config/constants.php');
+
+class UserProfileManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function getUserById($userId) {
+        $sql = "SELECT * FROM tbl_users WHERE user_id = ?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $userId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($res && $this->db->numRows($res) > 0) {
+            return $this->db->fetchAssoc($res);
+        }
+        return null;
+    }
+    
+    public function validateInput($data, $userId) {
+        $errors = [];
+        
+        if (empty($data['full_name']) || empty($data['username']) || empty($data['phone']) || empty($data['email']) || empty($data['address'])) {
+            $errors[] = 'All fields are required.';
+        }
+        
+        $sql = "SELECT * FROM tbl_users WHERE username = ? AND user_id != ?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "si", $data['username'], $userId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($this->db->numRows($res) > 0) {
+            $errors[] = 'Username already exists.';
+        }
+        
+        $sql = "SELECT * FROM tbl_users WHERE email = ? AND user_id != ?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "si", $data['email'], $userId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($this->db->numRows($res) > 0) {
+            $errors[] = 'Email already exists.';
+        }
+        
+        if (!preg_match('/^[0-9]{10,15}$/', $data['phone'])) {
+            $errors[] = 'Phone number must be between 10 and 15 digits.';
+        }
+        
+        return $errors;
+    }
+    
+    public function updateProfile($userId, $fullName, $username, $phone, $email, $address) {
+        $sql = "UPDATE tbl_users SET 
+            full_name = ?,
+            username = ?,
+            phone = ?,
+            email = ?,
+            address = ?
+            WHERE user_id = ?";
+        
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "sssssi", $fullName, $username, $phone, $email, $address, $userId);
+        return $this->db->execute($stmt);
+    }
+}
 
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php"); // Redirect to login page if not logged in
+    header("Location: login.php");
     exit();
 }
 
-$user_id = $_SESSION['user_id'];
+$userProfile = new UserProfileManager();
+$userId = $_SESSION['user_id'];
+$user = $userProfile->getUserById($userId);
+$errors = [];
 
-// Fetch user details from database
-$sql = "SELECT * FROM tbl_users WHERE user_id = '$user_id'";
-$res = mysqli_query($conn, $sql);
-
-if ($res && mysqli_num_rows($res) > 0) {
-    $user = mysqli_fetch_assoc($res);
-    $full_name = $user['full_name'];
-    $username = $user['username'];
-    $phone = $user['phone'];
-    $email = $user['email'];
-    $address = $user['address'];
-} else {
+if (!$user) {
     echo "User not found.";
     exit();
 }
 
-// Initialize error messages
-$errors = [];
+$fullName = $user['full_name'];
+$username = $user['username'];
+$phone = $user['phone'];
+$email = $user['email'];
+$address = $user['address'];
 
 // Handle form submission for updating user details
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $new_full_name = mysqli_real_escape_string($conn, $_POST['full_name']);
-    $new_username = mysqli_real_escape_string($conn, $_POST['username']);
-    $new_phone = mysqli_real_escape_string($conn, $_POST['phone']);
-    $new_email = mysqli_real_escape_string($conn, $_POST['email']);
-    $new_address = mysqli_real_escape_string($conn, $_POST['address']);
-
-    // Validate non-empty values
-    if (empty($new_full_name) || empty($new_username) || empty($new_phone) || empty($new_email) || empty($new_address)) {
-        $errors[] = 'All fields are required.';
-    }
-
-    // Validate unique username
-    $sql = "SELECT * FROM tbl_users WHERE username = '$new_username' AND user_id != '$user_id'";
-    $res = mysqli_query($conn, $sql);
-    if (mysqli_num_rows($res) > 0) {
-        $errors[] = 'Username already exists.';
-    }
-
-    // Validate unique email
-    $sql = "SELECT * FROM tbl_users WHERE email = '$new_email' AND user_id != '$user_id'";
-    $res = mysqli_query($conn, $sql);
-    if (mysqli_num_rows($res) > 0) {
-        $errors[] = 'Email already exists.';
-    }
-
-    // Validate phone number format (optional)
-    if (!preg_match('/^[0-9]{10,15}$/', $new_phone)) {
-        $errors[] = 'Phone number must be between 10 and 15 digits.';
-    }
-
-    // Update profile if no errors
+    $newData = [
+        'full_name' => htmlspecialchars($_POST['full_name']),
+        'username' => htmlspecialchars($_POST['username']),
+        'phone' => htmlspecialchars($_POST['phone']),
+        'email' => htmlspecialchars($_POST['email']),
+        'address' => htmlspecialchars($_POST['address']),
+    ];
+    
+    $errors = $userProfile->validateInput($newData, $userId);
+    
     if (empty($errors)) {
-        $update_sql = "UPDATE tbl_users SET 
-            full_name = '$new_full_name',
-            username = '$new_username',
-            phone = '$new_phone',
-            email = '$new_email',
-            address = '$new_address'
-            WHERE user_id = '$user_id'";
-
-        $update_res = mysqli_query($conn, $update_sql);
-
-        if ($update_res) {
+        if ($userProfile->updateProfile($userId, $newData['full_name'], $newData['username'], $newData['phone'], $newData['email'], $newData['address'])) {
+            $_SESSION['full_name'] = $newData['full_name'];
+            $_SESSION['user'] = $newData['username'];
             echo "<script>alert('Profile updated successfully.'); window.location.href='profile.php';</script>";
         } else {
-            $errors[] = 'Failed to update profile: ' . mysqli_error($conn);
+            $errors[] = 'Failed to update profile.';
         }
     }
 }

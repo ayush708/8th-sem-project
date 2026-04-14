@@ -1,177 +1,171 @@
 <?php 
 include('partials/menu.php'); 
 
-// Initialize error array
-$errors = [];
-
-// Process form submission with validation
-if(isset($_POST['submit'])) {
-    // Validate title
-    if(empty($_POST['title'])) {
-        $errors['title'] = "Title is required";
-    } else {
-        $title = $_POST['title'];
+class CategoryUpdateManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
     }
-
-    // Validate image upload if provided
-    $image_name = $_FILES['image']['name'];
-    if(!empty($image_name)) {
-        $image_tmp = $_FILES['image']['tmp_name'];
-
-        // Check file size and type (example checks, adjust as needed)
+    
+    public function getCategoryById($id) {
+        $sql = "SELECT * FROM tbl_category WHERE id=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $id);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($this->db->numRows($res) == 1) {
+            return $this->db->fetchAssoc($res);
+        }
+        return null;
+    }
+    
+    public function validateTitle($title) {
+        if (empty($title)) {
+            return "Title is required";
+        }
+        return null;
+    }
+    
+    public function validateImageUpload($fileSize, $fileType) {
         $max_size = 5 * 1024 * 1024; // 5 MB
         $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
-
-        // Check file size
-        if($_FILES['image']['size'] > $max_size) {
-            $errors['image'] = "File size exceeds limit (5MB)";
+        
+        if ($fileSize > $max_size) {
+            return "File size exceeds limit (5MB)";
         }
+        if (!in_array($fileType, $allowed_types)) {
+            return "Only JPEG, PNG, and GIF files are allowed";
+        }
+        return null;
+    }
+    
+    public function checkDuplicateTitle($title, $id) {
+        $sql = "SELECT * FROM tbl_category WHERE title=? AND id!=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "si", $title, $id);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        return $this->db->numRows($res) > 0;
+    }
+    
+    public function uploadCategoryImage($imageName, $imageTmp) {
+        $ext = pathinfo($imageName, PATHINFO_EXTENSION);
+        $newImageName = "Category_" . rand(000, 999) . '.' . $ext;
+        $uploadDir = "../images/category/";
+        $uploadPath = $uploadDir . $newImageName;
+        
+        if (move_uploaded_file($imageTmp, $uploadPath)) {
+            return $newImageName;
+        }
+        return false;
+    }
+    
+    public function deleteCategoryImage($imageName) {
+        if ($imageName != "") {
+            $path = "../images/category/" . $imageName;
+            if (file_exists($path)) {
+                return unlink($path);
+            }
+        }
+        return true;
+    }
+    
+    public function updateCategory($id, $title, $imageName, $featured, $active) {
+        $sql = "UPDATE tbl_category SET title=?, image_name=?, featured=?, active=? WHERE id=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "ssssi", $title, $imageName, $featured, $active, $id);
+        return $this->db->execute($stmt);
+    }
+}
 
-        // Check file type
-        if(!in_array($_FILES['image']['type'], $allowed_types)) {
-            $errors['image'] = "Only JPEG, PNG, and GIF files are allowed";
+// Initialize error array and updater
+$errors = [];
+$categoryUpdateManager = new CategoryUpdateManager();
+$id = isset($_GET['id']) ? $_GET['id'] : null;
+$title = $current_image = $featured = $active = '';
+
+// Fetch category on GET request
+if ($id && $_SERVER['REQUEST_METHOD'] == 'GET') {
+    $category = $categoryUpdateManager->getCategoryById($id);
+    if (!$category) {
+        $_SESSION['no-category-found'] = "Category not found";
+        header('location:'.SITEURL.'admin/category.php');
+        exit;
+    }
+    $title = $category['title'];
+    $current_image = $category['image_name'];
+    $featured = $category['featured'];
+    $active = $category['active'];
+}
+
+// Process form submission
+if(isset($_POST['submit'])) {
+    $id = $_POST['id'] ?? null;
+    $title = $_POST['title'] ?? '';
+    $featured = $_POST['featured'] ?? "No";
+    $active = $_POST['active'] ?? "No";
+    
+    // Validate title
+    if ($titleError = $categoryUpdateManager->validateTitle($title)) {
+        $errors['title'] = $titleError;
+    }
+    
+    // Check for existing image
+    $image_name = $_FILES['image']['name'] ?? '';
+    $image_tmp = $_FILES['image']['tmp_name'] ?? '';
+    
+    // Validate image if provided
+    if (!empty($image_name)) {
+        if ($imageError = $categoryUpdateManager->validateImageUpload($_FILES['image']['size'], $_FILES['image']['type'])) {
+            $errors['image'] = $imageError;
         }
     }
-
-    // If no errors, proceed with update
-    if(empty($errors)) {
-        // Get ID and all other details
-        if(isset($_POST['id'])) {
-            $id = $_POST['id'];
-
-            // Check if the new title already exists
-            $sql_check_title = "SELECT * FROM tbl_category WHERE title=? AND id!=?";
-            $stmt_check = mysqli_prepare($conn, $sql_check_title);
-
-            // Bind parameters
-            mysqli_stmt_bind_param($stmt_check, "si", $title, $id);
-
-            // Execute query
-            mysqli_stmt_execute($stmt_check);
-            $res_check = mysqli_stmt_get_result($stmt_check);
-
-            if(mysqli_num_rows($res_check) > 0) {
-                $errors['title'] = "Category name already exists";
-            }
-
-            if(empty($errors)) {
-                // Fetch existing category details
-                $sql = "SELECT * FROM tbl_category WHERE id=?";
-                $stmt = mysqli_prepare($conn, $sql);
-
-                // Bind ID parameter
-                mysqli_stmt_bind_param($stmt, "i", $id);
-
-                // Execute query
-                mysqli_stmt_execute($stmt);
-
-                // Get result
-                $res = mysqli_stmt_get_result($stmt);
-
-                // Check whether query is executed and get data
-                if(mysqli_num_rows($res) == 1) {
-                    // Fetch data
-                    $row = mysqli_fetch_assoc($res);
-                    $current_image = $row['image_name'];
-                    $featured = isset($_POST['featured']) ? $_POST['featured'] : "No";
-                    $active = isset($_POST['active']) ? $_POST['active'] : "No";
-
-                    // Handle new image upload
-                    if(!empty($image_name)) {
-                        // Auto rename image
-                        $ext = pathinfo($image_name, PATHINFO_EXTENSION);
-                        $image_name = "Category_" . rand(000, 999) . '.' . $ext;
-
-                        // Upload image
-                        $upload_dir = "../images/category/";
-                        $upload_path = $upload_dir . $image_name;
-
-                        if(move_uploaded_file($image_tmp, $upload_path)) {
-                            // Image uploaded successfully, remove current image if exists
-                            if($current_image != "") {
-                                $remove_path = "../images/category/".$current_image;
-                                unlink($remove_path);
-                            }
-                        } else {
-                            // Failed to upload image
-                            $_SESSION['upload'] = "Failed to Upload Image";
-                            header('location:'.SITEURL.'admin/category.php');
-                            exit;
-                        }
-                    } else {
-                        // No new image selected, use current image
-                        $image_name = $current_image;
-                    }
-
-                    // Update category in database
-                    $sql_update = "UPDATE tbl_category SET title=?, image_name=?, featured=?, active=? WHERE id=?";
-                    $stmt_update = mysqli_prepare($conn, $sql_update);
-
-                    // Bind parameters
-                    mysqli_stmt_bind_param($stmt_update, "ssssi", $title, $image_name, $featured, $active, $id);
-
-                    // Execute update query
-                    if(mysqli_stmt_execute($stmt_update)) {
-                        // Category updated successfully
-                        $_SESSION['update'] = "Category Updated Successfully";
-                        header('location:'.SITEURL.'admin/category.php');
-                        exit;
-                    } else {
-                        // Failed to update category
-                        $_SESSION['update'] = "Failed to Update Category";
-                        header('location:'.SITEURL.'admin/category.php');
-                        exit;
-                    }
-                } else {
-                    // Category not found
-                    $_SESSION['no-category-found'] = "Category not found";
-                    header('location:'.SITEURL.'admin/category.php');
-                    exit;
-                }
-            }
-        } else {
-            // Redirect if ID is not provided
-            header('location:'.SITEURL.'admin/category.php');
-            exit;
-        }
-    }
-} else {
-    // Check whether ID is set or not
-    if(isset($_GET['id'])) {
-        // Get ID and all other details
-        $id = $_GET['id'];
-
-        // Create SQL query to get all other details
-        $sql = "SELECT * FROM tbl_category WHERE id=?";
-        $stmt = mysqli_prepare($conn, $sql);
-
-        // Bind ID parameter
-        mysqli_stmt_bind_param($stmt, "i", $id);
-
-        // Execute query
-        mysqli_stmt_execute($stmt);
-
-        // Get result
-        $res = mysqli_stmt_get_result($stmt);
-
-        // Check whether query is executed and get data
-        if(mysqli_num_rows($res) == 1) {
-            // Fetch data
-            $row = mysqli_fetch_assoc($res);
-            $title = $row['title'];
-            $current_image = $row['image_name'];
-            $featured = $row['featured'];
-            $active = $row['active'];
-        } else {
-            // Category not found
+    
+    // If no validation errors, proceed
+    if (empty($errors)) {
+        // Get current category data
+        $category = $categoryUpdateManager->getCategoryById($id);
+        if (!$category) {
             $_SESSION['no-category-found'] = "Category not found";
             header('location:'.SITEURL.'admin/category.php');
             exit;
         }
-    } else {
-        // Redirect if ID is not provided
-        header('location:'.SITEURL.'admin/category.php');
-        exit;
+        
+        $current_image = $category['image_name'];
+        
+        // Check for duplicate title
+        if ($categoryUpdateManager->checkDuplicateTitle($title, $id)) {
+            $errors['title'] = "Category name already exists";
+        }
+        
+        if (empty($errors)) {
+            // Handle image upload
+            if (!empty($image_name)) {
+                $newImageName = $categoryUpdateManager->uploadCategoryImage($image_name, $image_tmp);
+                if (!$newImageName) {
+                    $_SESSION['upload'] = "Failed to Upload Image";
+                    header('location:'.SITEURL.'admin/update-category.php?id='.$id);
+                    exit;
+                }
+                // Delete old image
+                $categoryUpdateManager->deleteCategoryImage($current_image);
+                $image_name = $newImageName;
+            } else {
+                $image_name = $current_image;
+            }
+            
+            // Update category
+            if ($categoryUpdateManager->updateCategory($id, $title, $image_name, $featured, $active)) {
+                $_SESSION['update'] = "Category Updated Successfully";
+                header('location:'.SITEURL.'admin/category.php');
+                exit;
+            } else {
+                $_SESSION['update'] = "Failed to Update Category";
+                header('location:'.SITEURL.'admin/category.php');
+                exit;
+            }
+        }
     }
 }
 ?>

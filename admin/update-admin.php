@@ -1,95 +1,94 @@
-<?php include('partials/menu.php'); ?>
-<?php
-        // Initialize error array
-        $err = [];
+<?php include('partials/menu.php'); 
 
-        // Check if ID is passed via GET
-        if (isset($_GET['id'])) {
-            $id = $_GET['id'];
-
-            // Create SQL query to get admin details
-            $sql = "SELECT * FROM tbl_admin WHERE id=?";
-            
-            // Prepare statement
-            $stmt = mysqli_prepare($conn, $sql);
-            
-            // Bind parameters
-            mysqli_stmt_bind_param($stmt, "i", $id);
-            
-            // Execute statement
-            mysqli_stmt_execute($stmt);
-            
-            // Get result
-            $res = mysqli_stmt_get_result($stmt);
-
-            // Check if query executed successfully
-            if ($res) {
-                // Check if admin data is available
-                if (mysqli_num_rows($res) == 1) {
-                    // Fetch admin details
-                    $row = mysqli_fetch_assoc($res);
-                    $full_name = $row['full_name'];
-                    $username = $row['username'];
-                } else {
-                    // Redirect if admin not found
-                    header('location:'.SITEURL.'admin/manage-admin.php');
-                    exit; // Make sure to exit after header redirect
-                }
-            } else {
-                // Handle query execution error
-                die("Query execution failed: " . mysqli_error($conn));
-            }
-        } else {
-            // Redirect if ID is not provided
-            header('location:'.SITEURL.'admin/manage-admin.php');
-            exit; // Make sure to exit after header redirect
+class AdminUpdateManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function getAdminById($id) {
+        $sql = "SELECT * FROM tbl_admin WHERE id=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $id);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($this->db->numRows($res) == 1) {
+            return $this->db->fetchAssoc($res);
         }
-?>
+        return null;
+    }
+    
+    public function validateFullName($full_name) {
+        if (empty($full_name)) {
+            return "Enter Full Name";
+        } elseif (!preg_match("/^[a-zA-Z\s]+$/", $full_name)) {
+            return "Full Name must only contain letters and spaces";
+        }
+        return null;
+    }
+    
+    public function validateUsername($username) {
+        if (empty($username)) {
+            return "Enter Username";
+        } elseif (!preg_match("/^[a-zA-Z0-9]{4,29}$/", $username)) {
+            return "Username must be alphanumeric and between 4 to 29 characters";
+        }
+        return null;
+    }
+    
+    public function updateAdmin($id, $full_name, $username) {
+        $sql = "UPDATE tbl_admin SET full_name=?, username=? WHERE id=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "ssi", $full_name, $username, $id);
+        return $this->db->execute($stmt);
+    }
+}
 
-<?php
+// Initialize error array
+$err = [];
+$adminUpdateManager = new AdminUpdateManager();
+
+// Check if ID is passed via GET
+if (isset($_GET['id'])) {
+    $id = $_GET['id'];
+    $admin = $adminUpdateManager->getAdminById($id);
+    
+    if (!$admin) {
+        header('location:'.SITEURL.'admin/manage-admin.php');
+        exit;
+    }
+    
+    $full_name = $admin['full_name'];
+    $username = $admin['username'];
+} else {
+    header('location:'.SITEURL.'admin/manage-admin.php');
+    exit;
+}
+
 // Check if form is submitted
 if (isset($_POST['submit'])) {
-    // Validate and sanitize input
     $id = $_POST['id'];
     $full_name = $_POST['full_name'];
     $username = $_POST['username'];
 
-    // Validation for full name
-    if (empty($full_name)) {
-        $err['full_name'] = "Enter Full Name";
-    } elseif (!preg_match("/^[a-zA-Z\s]+$/", $full_name)) {
-        $err['full_name'] = "Full Name must only contain letters and spaces";
+    // Validate inputs
+    if ($nameError = $adminUpdateManager->validateFullName($full_name)) {
+        $err['full_name'] = $nameError;
     }
-
-    // Validation for username
-    if (empty($username)) {
-        $err['username'] = "Enter Username";
-    } elseif (!preg_match("/^[a-zA-Z0-9]{4,29}$/", $username)) {
-        $err['username'] = "Username must be alphanumeric and between 4 to 29 characters";
+    if ($usernameError = $adminUpdateManager->validateUsername($username)) {
+        $err['username'] = $usernameError;
     }
-
-    // Debug: Display $err array for debugging
 
     // If no errors, proceed with update
     if (empty($err)) {
-        // Create SQL query to update admin
-        $sql = "UPDATE tbl_admin SET full_name=?, username=? WHERE id=?";
-        
-        // Prepare statement
-        $stmt = mysqli_prepare($conn, $sql);
-        
-        // Bind parameters
-        mysqli_stmt_bind_param($stmt, "ssi", $full_name, $username, $id);
-        
-        // Execute statement
-        if (mysqli_stmt_execute($stmt)) {
+        if ($adminUpdateManager->updateAdmin($id, $full_name, $username)) {
             $_SESSION['update'] = "Admin Updated Successfully";
             header('location:'.SITEURL.'admin/manage-admin.php');
-            exit; // Make sure to exit after header redirect
+            exit;
         } else {
             $_SESSION['update'] = "Failed to update Admin";
             header('location:'.SITEURL.'admin/manage-admin.php');
-            exit; // Make sure to exit after header redirect
+            exit;
         }
     }
 }

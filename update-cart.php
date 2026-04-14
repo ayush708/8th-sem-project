@@ -1,19 +1,32 @@
 <?php
 session_start();
+include('config/constants.php');
+
+class CartOperations {
+    public function updateQuantity($itemId, $quantity) {
+        if (isset($_SESSION['cart'])) {
+            foreach ($_SESSION['cart'] as $key => $item) {
+                if ($item['id'] == $itemId) {
+                    if ($quantity > 0) {
+                        $_SESSION['cart'][$key]['quantity'] = $quantity;
+                        return true;
+                    }
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+}
 
 // Check if the quantity and item_id are set
 if (isset($_POST['quantity']) && isset($_POST['item_id'])) {
-    $item_id = $_POST['item_id'];
-    $quantity = $_POST['quantity'];
-
-    // Update the quantity of the item in the session
-    foreach ($_SESSION['cart'] as $key => $item) {
-        if ($item['id'] == $item_id) {
-            $_SESSION['cart'][$key]['quantity'] = $quantity;
-            break;
-        }
-    }
-
+    $itemId = $_POST['item_id'];
+    $quantity = intval($_POST['quantity']);
+    
+    $cartOps = new CartOperations();
+    $cartOps->updateQuantity($itemId, $quantity);
+    
     // Redirect back to the cart page
     header('Location: cart.php');
     exit();

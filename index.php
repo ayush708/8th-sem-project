@@ -1,4 +1,49 @@
-<?php include('partials-front/menu.php'); ?>
+<?php
+include('config/constants.php');
+include('partials-front/menu.php');
+
+class HomePageManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+
+    public function getOrderMessage() {
+        if (isset($_SESSION['order'])) {
+            $message = $_SESSION['order'];
+            unset($_SESSION['order']);
+            return $message;
+        }
+        return '';
+    }
+
+    public function isUserLoggedIn() {
+        return isset($_SESSION['user']);
+    }
+
+    public function getFeaturedCategories() {
+        $sql = "SELECT * FROM tbl_category WHERE active='Yes' AND featured='Yes'";
+        $stmt = $this->db->prepare($sql);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        return $res ? $this->db->fetchAll($res) : [];
+    }
+
+    public function getFeaturedItems($limit = 20) {
+        $limit = (int)$limit;
+        $sql = "SELECT * FROM tbl_items WHERE active='Yes' AND featured='Yes' LIMIT {$limit}";
+        $stmt = $this->db->prepare($sql);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        return $res ? $this->db->fetchAll($res) : [];
+    }
+}
+
+$homePageManager = new HomePageManager();
+$orderMessage = $homePageManager->getOrderMessage();
+$isUserLoggedIn = $homePageManager->isUserLoggedIn();
+$featuredCategories = $homePageManager->getFeaturedCategories();
+$featuredItems = $homePageManager->getFeaturedItems(20);
+?>
 
 <!-- Search section start -->
 <section class="search-section">
@@ -18,23 +63,59 @@
 </section>
 <!-- Search section end -->
 
-<?php
-if (isset($_SESSION['order'])) {
-    echo "<div class='notification success'>" . $_SESSION['order'] . "</div>";
-    unset($_SESSION['order']);
-}
-?>
+<?php if (!empty($orderMessage)) {
+    echo "<div class='notification success'>{$orderMessage}</div>";
+} ?>
 
 <!-- Recommendations Section -->
-<?php if (isset($_SESSION['user'])): ?>
-    <section class="recommendations-cta">
-        <div class="container">
-            <a href="<?php echo SITEURL; ?>recommendations.php" class="cta-button">
-                <i class="fas fa-star"></i>
-                Personalized Recommendations
-            </a>
-        </div>
-    </section>
+<?php if ($isUserLoggedIn): ?>
+    <style>
+.recommendations-cta {
+    padding: 30px 0;
+    background-color: #f5f7fb;
+}
+
+.cta-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    font-size: 1rem;
+    color: #2d3748;
+    background-color: #ffffff;
+    border-radius: 4px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.cta-button:hover {
+    background-color: #f8fafc;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transform: scale(1.02);
+}
+
+.cta-button i {
+    color: #4f46e5;
+    font-size: 1rem;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    text-align: center;
+}
+</style>
+
+<section class="recommendations-cta">
+    <div class="container">
+        <a href="<?php echo SITEURL; ?>recommendations.php" class="cta-button">
+            <i class="fas fa-heart"></i>
+            See My Recommendations
+        </a>
+    </div>
+</section>
 <?php endif; ?>
 
 <!-- Categories section start -->
@@ -44,12 +125,8 @@ if (isset($_SESSION['order'])) {
         
         <div class="categories-grid">
             <?php
-            $sql = "SELECT * FROM tbl_category WHERE active='Yes' AND featured='Yes'";
-            $res = mysqli_query($conn, $sql);
-            $count = mysqli_num_rows($res);
-
-            if ($count > 0) {
-                while ($row = mysqli_fetch_assoc($res)) {
+            if (!empty($featuredCategories)) {
+                foreach ($featuredCategories as $row) {
                     $id = $row['id'];
                     $title = $row['title'];
                     $image_name = $row['image_name'];
@@ -82,12 +159,8 @@ if (isset($_SESSION['order'])) {
         
         <div class="products-grid">
             <?php
-            $sql2 = "SELECT * FROM tbl_items WHERE active='Yes' AND featured='Yes' LIMIT 20";
-            $res2 = mysqli_query($conn, $sql2);
-            $count2 = mysqli_num_rows($res2);
-
-            if ($count2 > 0) {
-                while ($row = mysqli_fetch_assoc($res2)) {
+            if (!empty($featuredItems)) {
+                foreach ($featuredItems as $row) {
                     $id = $row['id'];
                     $title = $row['title'];
                     $price = $row['price'];

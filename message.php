@@ -1,3 +1,21 @@
+<?php
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+class PaymentMessagePageRenderer {
+    public function getTransactionMessage() {
+        if (isset($_SESSION['transaction_msg'])) {
+            $message = $_SESSION['transaction_msg'];
+            unset($_SESSION['transaction_msg']);
+            return $message;
+        }
+        return '';
+    }
+
+    public function render() {
+        $transactionMessage = $this->getTransactionMessage();
+        ?>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -6,19 +24,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment successful</title>
 
-    <!-- bootstrap css -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 </head>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <body>
-    <?php
-    session_start();
-    if (isset($_SESSION['transaction_msg'])) {
-        echo $_SESSION['transaction_msg'];
-        unset($_SESSION['transaction_msg']);
-    }
-    ?>
+    <?php if (!empty($transactionMessage)) {
+        echo $transactionMessage;
+    } ?>
 
     <div class="mt-5 d-flex justify-content-center">
         <div class="mb-3">
@@ -41,3 +54,10 @@
 </body>
 
 </html>
+<?php
+    }
+}
+
+$paymentMessagePageRenderer = new PaymentMessagePageRenderer();
+$paymentMessagePageRenderer->render();
+?>

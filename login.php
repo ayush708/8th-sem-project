@@ -1,5 +1,36 @@
 <?php
+include('config/constants.php');
 include('partials-front/menu.php');
+
+class UserAuthManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function authenticate($username, $password) {
+        $sql = "SELECT * FROM tbl_users WHERE username=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "s", $username);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($res && $this->db->numRows($res) > 0) {
+            $row = $this->db->fetchAssoc($res);
+            if (password_verify($password, $row['password'])) {
+                return $row;
+            }
+        }
+        return false;
+    }
+    
+    public function setSessionData($user) {
+        $_SESSION['login'] = "Login Successful";
+        $_SESSION['user'] = $user['username'];
+        $_SESSION['user_id'] = $user['user_id'];
+        $_SESSION['full_name'] = $user['full_name'];
+        $_SESSION['user_logged_in'] = true;
+    }
+}
 
 // Check login status
 if (isset($_SESSION["user_logged_in"]) && $_SESSION["user_logged_in"] === true) {
@@ -9,6 +40,8 @@ if (isset($_SESSION["user_logged_in"]) && $_SESSION["user_logged_in"] === true) 
 
 // Initialize error array
 $err = [];
+$user = new UserAuthManager();
+$message = '';
 
 // Check whether the submit button is clicked or not
 if(isset($_POST['submit'])) {
@@ -26,46 +59,13 @@ if(isset($_POST['submit'])) {
     }
 
     if(empty($err)) {
-        // SQL to check whether user with username exists or not
-        $sql = "SELECT * FROM tbl_users WHERE username=?";
-        $stmt = mysqli_prepare($conn, $sql);
-        mysqli_stmt_bind_param($stmt, "s", $username);
-        mysqli_stmt_execute($stmt);
-        $res = mysqli_stmt_get_result($stmt);
-
-        if ($res) {
-            $row = mysqli_fetch_assoc($res);
-            if ($row) {
-                // Verify password
-                if (password_verify($password, $row['password'])) {
-                    // Password matches, proceed with login
-                    $_SESSION['login'] = "Login Successful";
-                    $_SESSION['user'] = $username;
-                    $_SESSION['user_id'] = $row['user_id'];
-                    $_SESSION['full_name'] = $row['full_name'];
-                    $_SESSION['user_logged_in'] = true; // Set session variable for logged in status
-                    // Redirect to home page 
-                    header('Location: ' . SITEURL . 'user-dashboard.php');
-                    exit;
-                } else {
-                    // Password does not match
-                    $_SESSION['login'] = "<span class='error text-center'>Username or Password didn't Match</span>";
-                    // Redirect to login page 
-                    header('Location: ' . SITEURL . 'login.php');
-                    exit;
-                }
-            } else {
-                // User not found
-                $_SESSION['login'] = "<span class='error text-center'>Username or Password didn't Match</span>";
-                // Redirect to login page 
-                header('Location: ' . SITEURL . 'login.php');
-                exit;
-            }
-        } else {
-            // SQL query execution failed
-            $_SESSION['login'] = "Database error: Unable to execute query.";
-            header('Location: ' . SITEURL . 'login.php');
+        $authUser = $user->authenticate($username, $password);
+        if ($authUser) {
+            $user->setSessionData($authUser);
+            header('Location: ' . SITEURL . 'user-dashboard.php');
             exit;
+        } else {
+            $message = "<span class='error text-center'>Username or Password didn't Match</span>";
         }
     }
 }

@@ -1,49 +1,67 @@
 <?php
 include('partials-front/menu.php');
+include('config/constants.php');
 
-// Initialize error and success variables
-$err = [];
-$success_message = "";
+class PasswordResetRequester extends BaseManager {
+    
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
 
-// Database connection
-$conn = mysqli_connect('localhost', 'root', '', 'petshop');
-
-if (!$conn) {
-    die("Connection failed: " . mysqli_connect_error());
+    public function sanitize($value) {
+        return filter_var(parent::sanitize($value), FILTER_SANITIZE_EMAIL);
+    }
+    
+    public function getUserByEmail($email) {
+        $sql = "SELECT * FROM tbl_users WHERE email=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "s", $email);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        return $this->db->numRows($res) > 0 ? $this->db->fetchAssoc($res) : null;
+    }
+    
+    public function generateResetToken($email) {
+        $reset_token = bin2hex(random_bytes(32));
+        $reset_expiry = date('Y-m-d H:i:s', strtotime('+1 minute'));
+        
+        $sql = "UPDATE tbl_users SET reset_token=?, reset_expiry=? WHERE email=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "sss", $reset_token, $reset_expiry, $email);
+        
+        return $this->db->execute($stmt) ? $reset_token : false;
+    }
+    
+    public function sendResetEmail($email, $resetToken) {
+        $reset_link = "http://localhost/OPS/reset-password.php?token=" . $resetToken;
+        $subject = "Password Reset Request";
+        $message = "Please click on the following link to reset your password (link expires in 1 minute): " . $reset_link;
+        $headers = "From: no-reply@example.com\r\n";
+        
+        return mail($email, $subject, $message, $headers);
+    }
 }
 
+$err = [];
+$success_message = "";
+$requester = new PasswordResetRequester();
+
 if (isset($_POST['submit'])) {
-    $email = trim($_POST['email']);
+    $email = isset($_POST['email']) ? $requester->sanitize($_POST['email']) : '';
 
     if (empty($email)) {
         $err['email'] = "Email address is required.";
     } else {
-        // Check if email exists in the database
-        $sql = "SELECT * FROM tbl_users WHERE email=?";
-        $stmt = mysqli_prepare($conn, $sql);
-        mysqli_stmt_bind_param($stmt, "s", $email);
-        mysqli_stmt_execute($stmt);
-        $res = mysqli_stmt_get_result($stmt);
-
-        if ($res && mysqli_num_rows($res) > 0) {
-            // Generate a new unique token and expiry time (1 minute from now)
-            $reset_token = bin2hex(random_bytes(32));
-            $reset_expiry = date('Y-m-d H:i:s', strtotime('+1 minute'));
-
-            // Store the new token and expiry in the database
-            $sql = "UPDATE tbl_users SET reset_token=?, reset_expiry=? WHERE email=?";
-            $stmt = mysqli_prepare($conn, $sql);
-            mysqli_stmt_bind_param($stmt, "sss", $reset_token, $reset_expiry, $email);
-            mysqli_stmt_execute($stmt);
-
-            // Send reset link to the user's email
-            $reset_link = "http://localhost/OPS/reset-password.php?token=" . $reset_token;
-            $subject = "Password Reset Request";
-            $message = "Please click on the following link to reset your password (link expires in 1 minute): " . $reset_link;
-            $headers = "From: no-reply@example.com\r\n";
-            mail($email, $subject, $message, $headers);
-
-            $success_message = "A password reset link has been sent to your email address.";
+        $user = $requester->getUserByEmail($email);
+        
+        if ($user) {
+            $resetToken = $requester->generateResetToken($email);
+            if ($resetToken && $requester->sendResetEmail($email, $resetToken)) {
+                $success_message = "A password reset link has been sent to your email address.";
+            } else {
+                $err['email'] = "Failed to send reset email.";
+            }
         } else {
             $err['email'] = "No account found with that email address.";
         }

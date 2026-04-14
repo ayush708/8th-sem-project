@@ -1,4 +1,50 @@
-<?php include('partials-front/menu.php'); ?>
+<?php
+include('config/constants.php');
+include('partials-front/menu.php');
+
+class UserDashboardManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+
+    public function getLoginMessage() {
+        if (isset($_SESSION['login'])) {
+            $message = $_SESSION['login'];
+            unset($_SESSION['login']);
+            return $message;
+        }
+        return '';
+    }
+
+    public function getOrderCountByUserId($userId) {
+        $sql = "SELECT COUNT(*) AS total_orders FROM tbl_order WHERE uid = ?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $userId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        if ($res && $this->db->numRows($res) > 0) {
+            $row = $this->db->fetchAssoc($res);
+            return (int)$row['total_orders'];
+        }
+        return 0;
+    }
+
+    public function getOrdersByUserId($userId) {
+        $sql = "SELECT * FROM tbl_order WHERE uid = ? ORDER BY order_date DESC";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $userId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        return $res ? $this->db->fetchAll($res) : [];
+    }
+}
+
+$dashboardManager = new UserDashboardManager();
+$userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0;
+$loginMessage = $dashboardManager->getLoginMessage();
+$orderCount = $dashboardManager->getOrderCountByUserId($userId);
+$orders = $dashboardManager->getOrdersByUserId($userId);
+?>
 <!--main content section starts here-->
 <div class="main">
     <div class="wrapper">
@@ -57,12 +103,9 @@
         </div>
 
         <!-- Notification for successful login -->
-        <?php
-        if(isset($_SESSION['login'])) {
-            echo "<div style='font-size: 1.2em; color: #28a745; text-align: center; margin-bottom: 20px;'>".$_SESSION['login']."</div>";
-            unset($_SESSION['login']);
-        }
-        ?>
+        <?php if (!empty($loginMessage)) {
+            echo "<div style='font-size: 1.2em; color: #28a745; text-align: center; margin-bottom: 20px;'>{$loginMessage}</div>";
+        } ?>
         <br>
 
         <!-- Dashboard content -->
@@ -77,17 +120,8 @@
             align-items: center;
             height: 150px;
         ">
-            <?php
-            $user_id = $_SESSION['user_id'];
-            // SQL query
-            $sql = "SELECT * FROM tbl_order WHERE uid = $user_id";
-            // Execute query
-            $res = mysqli_query($conn, $sql);
-            // Count
-            $count = mysqli_num_rows($res);
-            ?>
             <div>
-                <h1 style="font-size: 3em; color: #007bff; margin: 0;"><?php echo $count; ?></h1>
+                <h1 style="font-size: 3em; color: #007bff; margin: 0;"><?php echo $orderCount; ?></h1>
                 <p style="font-size: 1.2em; color: #495057; margin: 0;">Total Orders</p>
             </div>
         </div>
@@ -106,9 +140,9 @@
                 <th style="padding: 15px; text-align: left;">Action</th>
             </tr>
             <?php 
-            if ($res && mysqli_num_rows($res) > 0) {
+            if (!empty($orders)) {
                 $sn = 1;
-                while ($row = mysqli_fetch_assoc($res)) {
+                foreach ($orders as $row) {
                     $order_id = $row['id']; // Assuming `id` is the primary key for orders
                     $item = $row['item'];
                     $price = $row['price'];

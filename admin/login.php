@@ -1,7 +1,37 @@
 <?php
 include('../config/constants.php');
 
+class AdminLoginManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function authenticate($username, $password) {
+        $sql = "SELECT * FROM tbl_admin WHERE username=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "s", $username);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+
+        if ($res && $this->db->numRows($res) > 0) {
+            $row = $this->db->fetchAssoc($res);
+            if (password_verify($password, $row['password'])) {
+                return $row;
+            }
+        }
+        return false;
+    }
+    
+    public function setSession($admin) {
+        $_SESSION['login'] = "Login Successful";
+        $_SESSION['user'] = $admin['username'];
+        $_SESSION['admin_id'] = $admin['admin_id'] ?? $admin['id'];
+    }
+}
+
 $err = [];
+$adminLoginManager = new AdminLoginManager();
+$message = '';
 
 if (isset($_POST['submit'])) {
     if (isset($_POST['username']) && !empty(trim($_POST['username']))) {
@@ -17,31 +47,13 @@ if (isset($_POST['submit'])) {
     }
 
     if (empty($err)) {
-        $sql = "SELECT * FROM tbl_admin WHERE username='$username'";
-        $res = mysqli_query($conn, $sql);
-
-        if ($res) {
-            $row = mysqli_fetch_assoc($res);
-            if ($row) {
-                if (password_verify($password, $row['password'])) {
-                    $_SESSION['login'] = "Login Successful";
-                    $_SESSION['user'] = $username;
-                    header('Location: ' . SITEURL . 'admin/');
-                    exit;
-                } else {
-                    $_SESSION['login'] = "<span class='error'>Incorrect Username or Password</span>";
-                    header('Location: ' . SITEURL . 'admin/login.php');
-                    exit;
-                }
-            } else {
-                $_SESSION['login'] = "<span class='error'>Incorrect Username or Password</span>";
-                header('Location: ' . SITEURL . 'admin/login.php');
-                exit;
-            }
-        } else {
-            $_SESSION['login'] = "Database error: Unable to execute query.";
-            header('Location: ' . SITEURL . 'admin/login.php');
+        $admin = $adminLoginManager->authenticate($username, $password);
+        if ($admin) {
+            $adminLoginManager->setSession($admin);
+            header('Location: ' . SITEURL . 'admin/');
             exit;
+        } else {
+            $message = "<span class='error'>Incorrect Username or Password</span>";
         }
     }
 }

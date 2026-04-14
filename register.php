@@ -1,5 +1,113 @@
 <?php
+include('config/constants.php');
 include('partials-front/menu.php');
+
+// User Registration Class
+class UserRegistrationManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function validateFullName($fullName) {
+        if(empty($fullName)) {
+            return "Enter Full Name";
+        } elseif(!preg_match("/^[A-Za-z\s]+$/", $fullName)) {
+            return "Full Name must only contain letters and spaces";
+        }
+        return null;
+    }
+    
+    public function validateUsername($username) {
+        if(empty($username)) {
+            return "Enter Username";
+        } elseif(!preg_match("/^[a-zA-Z0-9]{4,29}$/", $username)) {
+            return "Username must be alphanumeric and between 4 to 29 characters";
+        }
+        
+        $sql = "SELECT * FROM tbl_users WHERE username=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "s", $username);
+        $this->db->execute($stmt);
+        $result = $this->db->getResult($stmt);
+        
+        if($this->db->numRows($result) > 0) {
+            return "Username already exists";
+        }
+        return null;
+    }
+    
+    public function validatePhone($phone) {
+        if(empty($phone)) {
+            return "Contact is required";
+        } elseif(!preg_match("/^9[0-9]{9}$/", $phone)) {
+            return "Invalid phone number, must start with 9 and be ten characters long";
+        }
+        
+        $sql = "SELECT * FROM tbl_users WHERE phone=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "s", $phone);
+        $this->db->execute($stmt);
+        $result = $this->db->getResult($stmt);
+        
+        if($this->db->numRows($result) > 0) {
+            return "Phone number already exists";
+        }
+        return null;
+    }
+    
+    public function validateEmail($email) {
+        if(empty($email)){
+            return "Email is required";
+        } elseif(!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return "Enter a valid email";
+        }
+        
+        $sql = "SELECT * FROM tbl_users WHERE email=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "s", $email);
+        $this->db->execute($stmt);
+        $result = $this->db->getResult($stmt);
+        
+        if($this->db->numRows($result) > 0) {
+            return "Email already exists";
+        }
+        return null;
+    }
+    
+    public function validateAddress($address) {
+        if(empty($address)){
+            return "Address is required";
+        }
+        return null;
+    }
+    
+    public function validatePassword($password) {
+        if (empty($password)) {
+            return "Password is required";
+        } elseif (strlen($password) < 8) {
+            return "Password must be at least 8 characters long";
+        } elseif (!preg_match("/[A-Z]/", $password)) {
+            return "Password must contain at least one uppercase letter";
+        } elseif (!preg_match("/[a-z]/", $password)) {
+            return "Password must contain at least one lowercase letter";
+        } elseif (!preg_match("/[0-9]/", $password)) {
+            return "Password must contain at least one number";
+        } elseif (!preg_match("/[\W]/", $password)) {
+            return "Password must contain at least one special character";
+        }
+        return null;
+    }
+    
+    public function register($full_name, $username, $phone, $email, $address, $password) {
+        $password_hashed = password_hash($password, PASSWORD_DEFAULT);
+        
+        $sql = "INSERT INTO tbl_users (full_name, username, phone, email, address, password) VALUES (?, ?, ?, ?, ?, ?)";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "ssssss", $full_name, $username, $phone, $email, $address, $password_hashed);
+        
+        return $this->db->execute($stmt);
+    }
+}
 
 // Check login status
 if (isset($_SESSION["user_logged_in"]) && $_SESSION["user_logged_in"] === true) {
@@ -15,6 +123,9 @@ $email = '';
 $address = '';
 $err = [];
 
+// Instantiate registration class
+$userReg = new UserRegistrationManager();
+
 // Check if form is submitted
 if(isset($_POST['submit'])) {
     // Validate and sanitize inputs
@@ -25,113 +136,22 @@ if(isset($_POST['submit'])) {
     $address = isset($_POST['address']) ? trim($_POST['address']) : '';
     $password = isset($_POST['password']) ? trim($_POST['password']) : '';
 
-    // Validation for full name
-    if(empty($full_name)) {
-        $err['full_name'] = "Enter Full Name";
-    } elseif(!preg_match("/^[A-Za-z\s]+$/", $full_name)) {
-        $err['full_name'] = "Full Name must only contain letters and spaces";
-    }
-
-    // Validation for username
-    if(empty($username)) {
-        $err['username'] = "Enter Username";
-    } elseif(!preg_match("/^[a-zA-Z0-9]{4,29}$/", $username)) {
-        $err['username'] = "Username must be alphanumeric and between 4 to 29 characters";
-    } else {
-        // Check if username already exists
-        $sql_username_check = "SELECT * FROM tbl_users WHERE username=?";
-        $stmt_username_check = mysqli_prepare($conn, $sql_username_check);
-        mysqli_stmt_bind_param($stmt_username_check, "s", $username);
-        mysqli_stmt_execute($stmt_username_check);
-        $result_username_check = mysqli_stmt_get_result($stmt_username_check);
-        
-        if(mysqli_num_rows($result_username_check) > 0) {
-            $err['username'] = "Username already exists";
-        }
-    }
-
-    // Validation for phone
-    if(empty($phone)) {
-        $err['phone'] = "Contact is required";
-    } elseif(!preg_match("/^9[0-9]{9}$/", $phone)) {
-        $err['phone'] = "Invalid phone number, must start with 9 and be ten characters long";
-    } else {
-        // Check if phone already exists
-        $sql_phone_check = "SELECT * FROM tbl_users WHERE phone=?";
-        $stmt_phone_check = mysqli_prepare($conn, $sql_phone_check);
-        mysqli_stmt_bind_param($stmt_phone_check, "s", $phone);
-        mysqli_stmt_execute($stmt_phone_check);
-        $result_phone_check = mysqli_stmt_get_result($stmt_phone_check);
-        
-        if(mysqli_num_rows($result_phone_check) > 0) {
-            $err['phone'] = "Phone number already exists";
-        }
-    }
-
-    // Validation for email
-    if(empty($email)){
-        $err['email'] = "Email is required";
-    } elseif(!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $err['email'] = "Enter a valid email";
-    } else {
-        // Check if email already exists
-        $sql_email_check = "SELECT * FROM tbl_users WHERE email=?";
-        $stmt_email_check = mysqli_prepare($conn, $sql_email_check);
-        mysqli_stmt_bind_param($stmt_email_check, "s", $email);
-        mysqli_stmt_execute($stmt_email_check);
-        $result_email_check = mysqli_stmt_get_result($stmt_email_check);
-        
-        if(mysqli_num_rows($result_email_check) > 0) {
-            $err['email'] = "Email already exists";
-        }
-    }
-
-    // Validation for address
-    if(empty($address)){
-        $err['address'] = "Address is required";
-    }
-    // Password validation
-    if (empty($password)) {
-        $err['password'] = "Password is required";
-    } elseif (strlen($password) < 8) {
-        $err['password'] = "Password must be at least 8 characters long";
-    } elseif (!preg_match("/[A-Z]/", $password)) {
-        $err['password'] = "Password must contain at least one uppercase letter";
-    } elseif (!preg_match("/[a-z]/", $password)) {
-        $err['password'] = "Password must contain at least one lowercase letter";
-    } elseif (!preg_match("/[0-9]/", $password)) {
-        $err['password'] = "Password must contain at least one number";
-    } elseif (!preg_match("/[\W]/", $password)) {
-        $err['password'] = "Password must contain at least one special character";
-    }
-
-  
+    // Validate all fields
+    if($error = $userReg->validateFullName($full_name)) $err['full_name'] = $error;
+    if($error = $userReg->validateUsername($username)) $err['username'] = $error;
+    if($error = $userReg->validatePhone($phone)) $err['phone'] = $error;
+    if($error = $userReg->validateEmail($email)) $err['email'] = $error;
+    if($error = $userReg->validateAddress($address)) $err['address'] = $error;
+    if($error = $userReg->validatePassword($password)) $err['password'] = $error;
 
     // Check if there are no errors
     if(empty($err)) {
-        // Password encryption
-        $password_hashed = password_hash($password, PASSWORD_DEFAULT);
-
-        // Prepare SQL statement with placeholders
-        $sql = "INSERT INTO tbl_users (full_name, username, phone, email, address, password) VALUES (?, ?, ?, ?, ?, ?)";
-
-        // Prepare statement
-        $stmt = mysqli_prepare($conn, $sql);
-
-        // Bind parameters and execute
-        mysqli_stmt_bind_param($stmt, "ssssss", $full_name, $username, $phone, $email, $address, $password_hashed);
-        
-        // Execute statement
-        if(mysqli_stmt_execute($stmt)) {
-            // Set success message in session
+        if($userReg->register($full_name, $username, $phone, $email, $address, $password)) {
             $_SESSION['add'] = "Registration Successful";
-            // Redirect to login page
             header("location:".SITEURL.'login.php');
             exit;
         } else {
-            // Set error message in session
             $_SESSION['add'] = "Failed to register";
-            // Redirect back to registration page
             header("location:".SITEURL.'register.php');
             exit;
         }

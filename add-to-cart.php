@@ -5,55 +5,74 @@ session_start();
 // Include database connection
 include('config/constants.php');
 
-// Check if item_id is set in the URL
-if (isset($_GET['item_id'])) {
-    $item_id = $_GET['item_id'];
-
-    // Fetch item details from the database
-    $sql = "SELECT * FROM tbl_items WHERE id='$item_id'";
-    $res = mysqli_query($conn, $sql);
+// Cart Management Class
+class CartManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
     
-    // If query is successful
-    if ($res == true) {
-        // Fetch the item details
-        $row = mysqli_fetch_assoc($res);
-        $title = $row['title'];
-        $price = $row['price'];
-        $image_name = $row['image_name'];
-
-        // Initialize cart session if not already done
+    public function getItemById($itemId) {
+        $sql = "SELECT * FROM tbl_items WHERE id=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $itemId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($res && $this->db->numRows($res) > 0) {
+            return $this->db->fetchAssoc($res);
+        }
+        return null;
+    }
+    
+    public function addToCart($itemId, $title, $price, $imageName) {
         if (!isset($_SESSION['cart'])) {
             $_SESSION['cart'] = array();
         }
-
-        // Check if item is already in the cart
-        $item_array_id = array_column($_SESSION['cart'], 'id');
-        if (!in_array($item_id, $item_array_id)) {
-            // Create a new item array
-            $item_array = array(
-                'id' => $item_id,
+        
+        $itemArrayId = array_column($_SESSION['cart'], 'id');
+        
+        if (!in_array($itemId, $itemArrayId)) {
+            $itemArray = array(
+                'id' => $itemId,
                 'title' => $title,
                 'price' => $price,
-                'image_name' => $image_name,
+                'image_name' => $imageName,
                 'quantity' => 1
             );
-            // Add the item to the cart session
-            $_SESSION['cart'][] = $item_array;
-            $_SESSION['order'] = "Item added to cart successfully.";
+            $_SESSION['cart'][] = $itemArray;
+            return "added";
         } else {
-            // Increase the quantity if the item is already in the cart
             foreach ($_SESSION['cart'] as &$item) {
-                if ($item['id'] == $item_id) {
+                if ($item['id'] == $itemId) {
                     $item['quantity'] += 1;
-                    $_SESSION['order'] = "Item quantity updated in cart.";
-                    break;
+                    return "updated";
                 }
             }
         }
     }
+}
 
+// Check if item_id is set in the URL
+if (isset($_GET['item_id'])) {
+    $itemId = $_GET['item_id'];
+    $cartManager = new CartManager();
+    
+    // Fetch item details from the database
+    $item = $cartManager->getItemById($itemId);
+    
+    // If item found
+    if ($item) {
+        $result = $cartManager->addToCart($item['id'], $item['title'], $item['price'], $item['image_name']);
+        
+        if ($result === "added") {
+            $_SESSION['order'] = "Item added to cart successfully.";
+        } elseif ($result === "updated") {
+            $_SESSION['order'] = "Item quantity updated in cart.";
+        }
+    }
+    
     // Redirect to the previous page or cart page
-    header('Location: index.php'); // You can change this to your desired page
+    header('Location: index.php');
     exit();
 } else {
     header('Location: index.php');

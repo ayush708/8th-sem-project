@@ -1,59 +1,80 @@
 <?php
 include('partials-front/menu.php');
+include('config/constants.php');
 
-// Initialize error and success variables
-$err = [];
-$success_message = "";
+class PasswordResets extends BaseManager {
+    
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
 
-// Database connection
-$conn = mysqli_connect('localhost', 'root', '', 'petshop');
-
-if (!$conn) {
-    die("Connection failed: " . mysqli_connect_error());
+    public function sanitize($value) {
+        return parent::sanitize($value);
+    }
+    
+    public function getUserByToken($token) {
+        $sql = "SELECT * FROM tbl_users WHERE reset_token=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "s", $token);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        return $this->db->numRows($res) > 0 ? $this->db->fetchAssoc($res) : null;
+    }
+    
+    public function isTokenValid($expiry) {
+        $current_time = date('Y-m-d H:i:s');
+        return $current_time <= $expiry;
+    }
+    
+    public function validatePasswords($newPassword, $confirmPassword) {
+        if (empty($newPassword) || empty($confirmPassword)) {
+            return "Both fields are required.";
+        }
+        if ($newPassword !== $confirmPassword) {
+            return "Passwords do not match.";
+        }
+        return null;
+    }
+    
+    public function updatePassword($token, $newPassword) {
+        $hashed_password = password_hash($newPassword, PASSWORD_DEFAULT);
+        $sql = "UPDATE tbl_users SET password=?, reset_token=NULL, reset_expiry=NULL WHERE reset_token=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "ss", $hashed_password, $token);
+        
+        return $this->db->execute($stmt);
+    }
 }
 
+$err = [];
+$success_message = "";
+$resets = new PasswordResets();
+
 if (isset($_GET['token'])) {
-    $token = $_GET['token'];
+    $token = $resets->sanitize($_GET['token']);
+    $user = $resets->getUserByToken($token);
 
-    // Check if token exists in the database
-    $sql = "SELECT * FROM tbl_users WHERE reset_token=?";
-    $stmt = mysqli_prepare($conn, $sql);
-    mysqli_stmt_bind_param($stmt, "s", $token);
-    mysqli_stmt_execute($stmt);
-    $res = mysqli_stmt_get_result($stmt);
-
-    if ($res && mysqli_num_rows($res) > 0) {
-        $row = mysqli_fetch_assoc($res);
-
-        $expiry = $row['reset_expiry'];
-        $current_time = date('Y-m-d H:i:s');
+    if ($user) {
+        $expiry = $user['reset_expiry'];
 
         // Validate the token expiry time
-        if ($current_time <= $expiry) {
+        if ($resets->isTokenValid($expiry)) {
             // Token is valid, process the password reset form submission
             if (isset($_POST['submit'])) {
-                $new_password = trim($_POST['password']);
-                $confirm_password = trim($_POST['confirm_password']);
+                $new_password = isset($_POST['password']) ? trim($_POST['password']) : '';
+                $confirm_password = isset($_POST['confirm_password']) ? trim($_POST['confirm_password']) : '';
 
-                if (empty($new_password) || empty($confirm_password)) {
-                    $err['password'] = "Both fields are required.";
-                } elseif ($new_password !== $confirm_password) {
-                    $err['password'] = "Passwords do not match.";
+                $validation_error = $resets->validatePasswords($new_password, $confirm_password);
+                
+                if ($validation_error) {
+                    $err['password'] = $validation_error;
                 } else {
-                    // Update the user's password in the database
-                    $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
-                    $sql = "UPDATE tbl_users SET password=?, reset_token=NULL, reset_expiry=NULL WHERE reset_token=?";
-                    $stmt = mysqli_prepare($conn, $sql);
-                    mysqli_stmt_bind_param($stmt, "ss", $hashed_password, $token);
-                    mysqli_stmt_execute($stmt);
-
-                    // Delete the token after the password is reset
-                    $sql = "UPDATE tbl_users SET reset_token=NULL, reset_expiry=NULL WHERE reset_token=?";
-                    $stmt = mysqli_prepare($conn, $sql);
-                    mysqli_stmt_bind_param($stmt, "s", $token);
-                    mysqli_stmt_execute($stmt);
-
-                    $success_message = "Your password has been successfully reset.";
+                    if ($resets->updatePassword($token, $new_password)) {
+                        $success_message = "Your password has been successfully reset.";
+                    } else {
+                        $err['password'] = "Failed to update password. Please try again.";
+                    }
                 }
             }
         } else {

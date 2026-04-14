@@ -1,67 +1,99 @@
-<?php include('partials-front/menu.php'); ?>
+<?php 
+include('partials-front/menu.php');
+include('config/constants.php');
 
+class OrderProcessorManager extends BaseManager {
+    public function __construct($db = null) {
+        parent::__construct($db);
+    }
+    
+    public function incrementItemViews($itemId) {
+        $sql = "UPDATE tbl_items SET total_views = total_views + 1 WHERE id = ?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $itemId);
+        return $this->db->execute($stmt);
+    }
+    
+    public function getItemDetails($itemId) {
+        $sql = "SELECT * FROM tbl_items WHERE id=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $itemId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($res && $this->db->numRows($res) == 1) {
+            return $this->db->fetchAssoc($res);
+        }
+        return null;
+    }
+    
+    public function getUserDetails($userId) {
+        $sql = "SELECT * FROM tbl_users WHERE user_id=?";
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, "i", $userId);
+        $this->db->execute($stmt);
+        $res = $this->db->getResult($stmt);
+        
+        if ($res && $this->db->numRows($res) == 1) {
+            return $this->db->fetchAssoc($res);
+        }
+        return null;
+    }
+    
+    public function createOrder($itemTitle, $price, $quantity, $total, $fullName, $phone, $email, $address, $userId, $paymentMethod) {
+        $sql = "INSERT INTO tbl_order (item, price, qty, total, order_date, status, customer_name, customer_contact, customer_email, customer_address, uid, payment_option)
+                VALUES (?, ?, ?, ?, NOW(), 'Ordered', ?, ?, ?, ?, ?, ?)";
+        
+        $stmt = $this->db->prepare($sql);
+        $this->db->bind($stmt, 'sdidsissis', 
+            $itemTitle, 
+            $price, 
+            $quantity, 
+            $total, 
+            $fullName, 
+            $phone, 
+            $email, 
+            $address, 
+            $userId, 
+            $paymentMethod
+        );
+        
+        return $this->db->execute($stmt);
+    }
+}
 
-<?php
 // Check if user is logged in
 if (!isset($_SESSION["user_logged_in"]) || $_SESSION["user_logged_in"] !== true) {
     header("location: login.php");
     exit();
 }
-include('config/constants.php');
+
+$orderProcessor = new OrderProcessorManager();
 
 // Check if item_id is passed in the URL
 if (isset($_GET['item_id'])) {
-    $item_id = $_GET['item_id'];
-
-    // SQL query to increment the total_views column
-    $sql = "UPDATE tbl_items SET total_views = total_views + 1 WHERE id = $item_id";
-
-    // Execute the query
-    $res = mysqli_query($conn, $sql);
-
-    // Check if the query executed successfully
-    if ($res === false) {
-        // Optional: Log the error or display a message
-        echo "<div class='error'>Failed to update views count. Please try again.</div>";
-    }
+    $itemId = $_GET['item_id'];
+    $orderProcessor->incrementItemViews($itemId);
+} else {
+    header('location:' . SITEURL);
+    exit();
 }
+
 // Check whether item_id is set or not
 if (isset($_GET['item_id'])) {
-    // Get the item id and details of the selected item
-    $item_id = $_GET['item_id'];
-
-    // Get the details for the selected item
-    $sql = "SELECT * FROM tbl_items WHERE id=?";
-    // Prepare statement
-    $stmt = mysqli_prepare($conn, $sql);
-    // Bind parameters
-    mysqli_stmt_bind_param($stmt, "i", $item_id);
-    // Execute
-    mysqli_stmt_execute($stmt);
-
-    // Get result
-    $res = mysqli_stmt_get_result($stmt);
-
-    // Count rows
-    $count = mysqli_num_rows($res);
-    // Check whether data is available or not
-    if ($count == 1) {
-        // We have data
-        // Get data from db
-        $row = mysqli_fetch_assoc($res);
-
-        $title = $row['title'];
-        $price = $row['price'];
-        $image_name = $row['image_name']; // Image is not used now
-        $available_qty = $row['quantity']; // Assuming the column name is `quantity`
+    $itemId = $_GET['item_id'];
+    $item = $orderProcessor->getItemDetails($itemId);
+    
+    if ($item) {
+        $title = $item['title'];
+        $price = $item['price'];
+        $imageName = $item['image_name'];
+        $availableQty = $item['quantity'];
     } else {
-        // Item not available
-        // Redirect
         header('location:' . SITEURL);
         exit();
     }
 } else {
-    // Redirect to home page
     header('location:' . SITEURL);
     exit();
 }
@@ -70,109 +102,70 @@ if (isset($_GET['item_id'])) {
 $err = [];
 
 // Fetch user details from database
-$user_id = $_SESSION['user_id'];
-$sql_user = "SELECT * FROM tbl_users WHERE user_id=?";
-$stmt_user = mysqli_prepare($conn, $sql_user);
-mysqli_stmt_bind_param($stmt_user, "i", $user_id);
-mysqli_stmt_execute($stmt_user);
-$res_user = mysqli_stmt_get_result($stmt_user);
+$userId = $_SESSION['user_id'];
+$user = $orderProcessor->getUserDetails($userId);
 
-if ($res_user && mysqli_num_rows($res_user) == 1) {
-    $user_row = mysqli_fetch_assoc($res_user);
-    $customer_name = $user_row['full_name'];
-    $customer_contact = $user_row['phone'];
-    $customer_email = $user_row['email'];
+if ($user) {
+    $userFullName = $user['full_name'];
+    $userPhone = $user['phone'];
+    $userEmail = $user['email'];
+    $userAddress = $user['address'];
 } else {
-    // User details not found or multiple users found unexpectedly
-    $_SESSION['order'] = "<div class='error text-center'>User details not found.</div>";
-    header('location:' . SITEURL);
+    header('location: login.php');
     exit();
 }
+
+// Initialize error array
+$err = [];
 
 // Check whether submit button is clicked or not
 if (isset($_POST['submit'])) {
     // Get all the details from the form
-    $item = $_POST['item'];
-    $price = $_POST['price'];
-    $qty = $_POST['qty'];
-    $total = $price * $qty; // total = price x qty
-    $order_date = date("Y-m-d H:i:s"); // Order date
-    $status = "Ordered"; // Status
-    $customer_address = $_POST['address'];
-    $payment_option = $_POST['payment_option'];
-    $uid = $_SESSION['user_id'];
+    $itemTitle = $title;
+    $itemPrice = $price;
+    $itemQty = isset($_POST['qty']) ? intval($_POST['qty']) : 0;
+    $itemTotal = $itemPrice * $itemQty;
+    $customerName = $userFullName;
+    $customerPhone = $userPhone;
+    $customerEmail = $userEmail;
+    $customerAddress = isset($_POST['address']) ? htmlspecialchars($_POST['address']) : '';
+    $paymentOption = isset($_POST['payment_option']) ? htmlspecialchars($_POST['payment_option']) : '';
 
     // Validate quantity
-    if (empty($qty) || !is_numeric($qty) || $qty <= 0) {
+    if (empty($itemQty) || !is_numeric($itemQty) || $itemQty <= 0) {
         $err['quantity'] = "Quantity must be greater than zero.";
-    } elseif ($qty > $available_qty) {
-        $err['quantity'] = "Only $available_qty items available in stock.";
+    } elseif ($itemQty > $availableQty) {
+        $err['quantity'] = "Only $availableQty items available in stock.";
     }
 
     // Validate address
-    if (empty($customer_address)) {
+    if (empty($customerAddress)) {
         $err['customer_address'] = "Address is required";
     }
 
-// Save the order in the database
-if (empty($err)) {
-    $sql2 = "INSERT INTO tbl_order (item, price, qty, total, order_date, status, customer_name, customer_contact, customer_email, customer_address, payment_option, uid)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-
-    // Prepare statement
-    $stmt2 = mysqli_prepare($conn, $sql2);
-
-    if ($stmt2) {
-        // Bind parameters
-        mysqli_stmt_bind_param($stmt2, 'siddsssssssi', $item, $price, $qty, $total, $order_date, $status, $customer_name, $customer_contact, $customer_email, $customer_address, $payment_option, $uid);
-
-        // Execute the query
-        if (mysqli_stmt_execute($stmt2)) {
-            // Get the order ID of the last inserted row
-            $order_id = mysqli_insert_id($conn);
-
-            // Save the order ID in the session
-            $_SESSION['order_id'] = $order_id;
-
-            // Deduct ordered quantity from stock
-            $new_qty = $available_qty - $qty;
-            $sql_update_qty = "UPDATE tbl_items SET quantity = ? WHERE id = ?";
-            $stmt_update_qty = mysqli_prepare($conn, $sql_update_qty);
-            mysqli_stmt_bind_param($stmt_update_qty, 'ii', $new_qty, $item_id);
-            mysqli_stmt_execute($stmt_update_qty);
+    // Save the order in the database
+    if (empty($err)) {
+        if ($orderProcessor->createOrder($itemTitle, $itemPrice, $itemQty, $itemTotal, $customerName, $customerPhone, $customerEmail, $customerAddress, $userId, $paymentOption)) {
+            $lastOrderId = Database::getInstance()->lastInsertId();
+            $_SESSION['order_id'] = $lastOrderId;
             
-//here total_sold is increased respect to the selling or orderd by an user
-            $sql_update_sold = "UPDATE tbl_items SET total_sold = total_sold + ? WHERE id = ?";
-$stmt_update_sold = mysqli_prepare($conn, $sql_update_sold);
-mysqli_stmt_bind_param($stmt_update_sold, 'ii', $qty, $item_id);
-mysqli_stmt_execute($stmt_update_sold);
-
             // Redirect based on payment method
-            if ($payment_option == "Online Payment") {
-                // Redirect to checkout for online payment
-                header("Location: checkout.php?amount=$total&item=$item&order_id=$order_id");
+            if ($paymentOption == "Online Payment") {
+                header("Location: checkout.php?amount=$itemTotal&item=$itemTitle&order_id=$lastOrderId");
                 exit();
             } else {
-                // Order successfully placed, show success message
                 $_SESSION['order'] = "<div class='success text-center'>Order Placed Successfully</div>";
                 header('location:' . SITEURL);
                 exit();
             }
         } else {
-            // Failed to save order
             $_SESSION['order'] = "<div class='error text-center'>Failed to Place Order</div>";
             header('location:' . SITEURL);
             exit();
         }
-    } else {
-        // Statement preparation failed
-        $_SESSION['order'] = "<div class='error text-center'>Database error: Unable to prepare statement.</div>";
-        header('location:' . SITEURL);
-        exit();
     }
 }
-
-}
+?>
 ?>
 
 <!-- item SEARCH Section Starts Here -->
@@ -204,13 +197,13 @@ mysqli_stmt_execute($stmt_update_sold);
                 <div>
                     <h2 class="order-label" style="font-size: 1.5em; color: #343a40; margin-bottom: 10px;">Delivery Details</h2>
                     <div class="order-label" style="font-size: 1.2em; color: #343a40; margin-bottom: 10px;">Full Name</div>
-                    <input type="text" name="full_name" value="<?php echo $customer_name; ?>" readonly class="input-responsive" disabled style="width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ced4da;">
+                    <input type="text" name="full_name" value="<?php echo $userFullName; ?>" readonly class="input-responsive" disabled style="width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ced4da;">
                     
                     <div class="order-label" style="font-size: 1.2em; color: #343a40; margin-bottom: 10px;">Phone Number</div>
-                    <input type="tel" name="contact" value="<?php echo $customer_contact; ?>" readonly class="input-responsive" disabled style="width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ced4da;">
+                    <input type="tel" name="contact" value="<?php echo $userPhone; ?>" readonly class="input-responsive" disabled style="width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ced4da;">
                     
                     <div class="order-label" style="font-size: 1.2em; color: #343a40; margin-bottom: 10px;">Email</div>
-                    <input type="text" name="email" value="<?php echo $customer_email; ?>" readonly class="input-responsive" disabled style="width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ced4da;">
+                    <input type="text" name="email" value="<?php echo $userEmail; ?>" readonly class="input-responsive" disabled style="width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ced4da;">
                     
                     <div class="order-label" style="font-size: 1.2em; color: #343a40; margin-bottom: 10px;">Address</div>
                     <textarea name="address" rows="4" placeholder="Street, City" class="input-responsive" style="width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ced4da;"></textarea>
